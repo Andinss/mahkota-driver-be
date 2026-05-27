@@ -1,13 +1,13 @@
 import {
   Injectable,
-  ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { UsersService } from '../users/users.service';
-import { RegisterDto } from './dto/register.dto';
+
 import { LoginDto } from './dto/login.dto';
 import { User } from '../users/entities/user.entity';
 
@@ -16,27 +16,24 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
-    const existing = await this.usersService.findByEmail(registerDto.email);
-    if (existing) {
-      throw new ConflictException('Email already registered');
+  async login(loginDto: LoginDto) {
+    const formData = new URLSearchParams();
+    formData.append('secret', this.configService.get<string>('TURNSTILE_SECRET_KEY')!);
+    formData.append('response', loginDto.turnstile_token);
+
+    const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: formData,
+    });
+    const turnstileResult = await turnstileRes.json();
+
+    if (!turnstileResult.success) {
+      throw new UnauthorizedException('Turnstile verification failed');
     }
 
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
-    const user = await this.usersService.create({
-      name: registerDto.name,
-      email: registerDto.email,
-      username: registerDto.username,
-      password: hashedPassword,
-    });
-
-    return plainToInstance(User, user);
-  }
-
-  async login(loginDto: LoginDto) {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -56,9 +53,9 @@ export class AuthService {
       access_token: this.jwtService.sign(payload),
       user: {
         id: user.id,
-        name: user.name,
         username: user.username,
         email: user.email,
+        profile_photo: user.profile_photo,
       },
     };
   }
