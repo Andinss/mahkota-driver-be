@@ -14,9 +14,9 @@ export class Driver {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @OneToOne(() => User)
-  @JoinColumn({ name: 'user_id' })
-  user!: User;
+  // @OneToOne(() => User)
+  // @JoinColumn({ name: 'user_id' })
+  // user!: User;
 
   //step 1
   @Column({ type: 'varchar', length: 100 })
@@ -26,7 +26,7 @@ export class Driver {
   last_name!: string;
 
   @Column({ type: 'date' })
-  date_of_birth!: string;
+  date_of_birth!: Date;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   profile_photo!: string;
@@ -37,13 +37,12 @@ export class Driver {
   @Column({ unique: true, type: 'varchar', length: 50 })
   employee_id!: string;
 
-  //step 2
-
   @Column({ type: 'varchar', length: 20 })
   phone!: string;
 
   @Column({ type: 'varchar', length: 100, unique: true })
   email!: string;
+  //step 2
 
   @Column({ type: 'varchar', length: 20 })
   emergency_contact!: string;

@@ -1,4 +1,10 @@
-import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class AddUserDto {
   @IsEmail()
@@ -7,15 +13,6 @@ export class AddUserDto {
   @IsString()
   username?: string;
 
-  @MinLength(8)
-  password?: string;
-
-  @IsString()
-  phone?: string;
-
-  @IsString()
-  profile_photo?: string;
-
   @IsEnum([
     'owner',
     'finance',
@@ -23,11 +20,10 @@ export class AddUserDto {
     'field_officer',
     'driver',
     'admin',
-    'customer',
     'operator ',
   ])
   role?: string;
 
-  @IsEnum(['active', 'inactive', 'pending', 'suspended'])
-  status?: string;
+  @IsBoolean()
+  is_active?: boolean;
 }

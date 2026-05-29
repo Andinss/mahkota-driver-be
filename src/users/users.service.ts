@@ -58,9 +58,10 @@ export class UsersService {
 
   async create(data: Partial<User>) {
     try {
-      if (data.password) {
-        data.password = await bcrypt.hash(data.password, 10);
-      }
+      const defaultPassword = '123';
+      const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+
+      data.password = hashedPassword; // <-- ini yang kurang
 
       const user = this.usersRepository.create(data);
       const result = await this.usersRepository.save(user);
@@ -75,8 +76,10 @@ export class UsersService {
     }
   }
 
-  async delete(id: string): Promise<{ success: boolean; message: string }> {
-    const result = await this.usersRepository.delete(id);
+  async delete(
+    employid: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const result = await this.usersRepository.delete(employid);
     if (result.affected === 0) {
       throw new NotFoundException('User not found');
     }

@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsOptional,
@@ -16,18 +17,6 @@ export class UpdateUserDto {
   username?: string;
 
   @IsOptional()
-  @MinLength(8)
-  password?: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsString()
-  profile_photo?: string;
-
-  @IsOptional()
   @IsEnum([
     'owner',
     'finance',
@@ -41,6 +30,6 @@ export class UpdateUserDto {
   role?: string;
 
   @IsOptional()
-  @IsEnum(['active', 'inactive', 'pending', 'suspended'])
-  status?: string;
+  @IsBoolean()
+  is_active?: boolean;
 }

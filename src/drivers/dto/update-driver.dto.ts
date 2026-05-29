@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsDate, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateDriverDto {
@@ -16,7 +17,8 @@ export class UpdateDriverDto {
 
   @IsOptional()
   @IsDate()
-  date_of_birth!: string;
+  @Type(() => Date)
+  date_of_birth!: Date;
 
   @IsOptional()
   @IsString()
