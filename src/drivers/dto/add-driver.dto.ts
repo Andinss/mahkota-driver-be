@@ -1,18 +1,17 @@
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDate,
   IsEmail,
-  IsEnum,
-  isString,
+  IsOptional,
   IsString,
-  IsUUID,
-  MinLength,
 } from 'class-validator';
 import { Column } from 'typeorm';
 
 export class AddDriverDto {
   //step 1
-  @IsUUID()
-  user_id!: string;
+  // @IsUUID()
+  // user_id!: string;
 
   @IsString()
   first_name!: string;
@@ -21,10 +20,12 @@ export class AddDriverDto {
   last_name!: string;
 
   @IsDate()
-  date_of_birth!: string;
+  @Type(() => Date)
+  date_of_birth!: Date;
 
+  @IsOptional()
   @IsString()
-  profile_photo!: string;
+  profile_photo?: string;
 
   @IsString()
   gender!: string;
@@ -32,13 +33,13 @@ export class AddDriverDto {
   @IsString()
   employee_id!: string;
 
-  //step 2
-
   @IsString()
   phone!: string;
 
   @IsEmail()
   email!: string;
+
+  //step 2
 
   @IsString()
   emergency_contact!: string;
@@ -52,22 +53,28 @@ export class AddDriverDto {
   @IsString()
   permanent_address!: string;
 
-  @IsString()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
   ready_sign_contract!: boolean;
 
-  @IsString()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
   willing_to_be_survey!: boolean;
 
   // step 3
+  @IsOptional()
   @IsString()
-  national_id_card!: string;
+  national_id_card?: string;
 
+  @IsOptional()
   @IsString()
-  sim_card!: string;
+  sim_card?: string;
 
+  @IsOptional()
   @IsString()
-  garage_photo!: string;
+  garage_photo?: string;
 
+  @IsOptional()
   @IsString()
-  npwp_photo!: string;
+  npwp_photo?: string;
 }

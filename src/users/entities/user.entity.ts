@@ -23,11 +23,21 @@ export class User {
   @Exclude()
   password!: string;
 
-  @Column('varchar', { length: 255 })
-  profile_photo!: string;
-
   @Column('boolean', { default: true })
   is_active!: boolean;
+
+  @Column('enum', {
+    enum: [
+      'owner',
+      'finance',
+      'supervisor',
+      'field_officer',
+      'driver',
+      'admin',
+      'operator',
+    ],
+  })
+  role!: string;
 
   @CreateDateColumn()
   created_at!: Date;

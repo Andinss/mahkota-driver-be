@@ -7,6 +7,7 @@ import {
   Req,
   Put,
   Delete,
+  Param,
 } from '@nestjs/common';
 
 import { UsersService } from './users.service';
@@ -20,7 +21,10 @@ export class UsersController {
   findAll() {
     return this.usersService.findAll();
   }
-
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.usersService.findById(id);
+  }
   @Post('create')
   create(@Body() addUserDto: AddUserDto) {
     return this.usersService.create(addUserDto);
@@ -32,9 +36,9 @@ export class UsersController {
     return this.usersService.update(userId, updateUserDto);
   }
 
-  @Delete('delete/:id')
+  @Delete('delete/:employid')
   delete(@Req() req: any) {
-    const userId = req.params.id;
+    const userId = req.params.employid;
     return this.usersService.delete(userId);
   }
 }

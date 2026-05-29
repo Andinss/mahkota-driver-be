@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -21,13 +18,19 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const formData = new URLSearchParams();
-    formData.append('secret', this.configService.get<string>('TURNSTILE_SECRET_KEY')!);
+    formData.append(
+      'secret',
+      this.configService.get<string>('TURNSTILE_SECRET_KEY')!,
+    );
     formData.append('response', loginDto.turnstile_token);
 
-    const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      body: formData,
-    });
+    const turnstileRes = await fetch(
+      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
     const turnstileResult = await turnstileRes.json();
 
     if (!turnstileResult.success) {
@@ -55,7 +58,6 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email,
-        profile_photo: user.profile_photo,
       },
     };
   }
