@@ -11,7 +11,10 @@ async function seed() {
   const userRepository = app.get<Repository<User>>(getRepositoryToken(User));
 
   const existing = await userRepository.findOne({
-    where: { username: 'admin' },
+    where: [
+      { username: 'admin' },
+      { email: 'admin@example.com' },
+    ],
   });
 
   if (existing) {
@@ -31,8 +34,16 @@ async function seed() {
     is_active: true,
   });
 
-  await userRepository.save(admin);
-  console.log('Admin created:', admin.id);
+  try {
+    await userRepository.save(admin);
+    console.log('Admin created:', admin.id);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      console.log('Admin already exists (skipped)');
+    } else {
+      throw err;
+    }
+  }
 
   await app.close();
 }
