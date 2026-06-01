@@ -6,6 +6,8 @@ import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { DriverModule } from './drivers/driver.module';
+import { RoleModule } from './roles/roles.module';
+import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({
   imports: [
@@ -27,8 +29,11 @@ import { DriverModule } from './drivers/driver.module';
     UsersModule,
     AuthModule,
     DriverModule,
+    RoleModule,
+    PermissionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
+
 export class AppModule {}
