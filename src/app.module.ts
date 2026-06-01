@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { DriverModule } from './drivers/driver.module';
 import { RentalsModule } from './rentals/rentals.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
+import { RoleModule } from './roles/roles.module';
+
 
 @Module({
   imports: [
@@ -31,8 +33,11 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     DriverModule,
     RentalsModule,
     VehiclesModule,
+    RoleModule,
+
   ],
   controllers: [AppController],
   providers: [AppService],
 })
+
 export class AppModule {}
