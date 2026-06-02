@@ -6,6 +6,8 @@ import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { DriverModule } from './drivers/driver.module';
+import { FinancesModule } from './finances/finances.module';
+import { Finance } from './finances/entities/finance.entity';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { DriverModule } from './drivers/driver.module';
     UsersModule,
     AuthModule,
     DriverModule,
+    FinancesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
