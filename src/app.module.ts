@@ -6,9 +6,11 @@ import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { DriverModule } from './drivers/driver.module';
+import { FinancesModule } from './finances/finances.module';
 import { RentalsModule } from './rentals/rentals.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { RoleModule } from './roles/roles.module';
+
 
 
 @Module({
@@ -31,6 +33,8 @@ import { RoleModule } from './roles/roles.module';
     UsersModule,
     AuthModule,
     DriverModule,
+
+    FinancesModule,
     RentalsModule,
     VehiclesModule,
     RoleModule,
