@@ -19,7 +19,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { Express } from 'express';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 
-@Controller('driver')
+@Controller('drivers')
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
   @Get()

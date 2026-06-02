@@ -7,7 +7,11 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { DriverModule } from './drivers/driver.module';
 import { FinancesModule } from './finances/finances.module';
-import { Finance } from './finances/entities/finance.entity';
+import { RentalsModule } from './rentals/rentals.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
+import { RoleModule } from './roles/roles.module';
+
+
 
 @Module({
   imports: [
@@ -29,9 +33,15 @@ import { Finance } from './finances/entities/finance.entity';
     UsersModule,
     AuthModule,
     DriverModule,
+
     FinancesModule,
+    RentalsModule,
+    VehiclesModule,
+    RoleModule,
+
   ],
   controllers: [AppController],
   providers: [AppService],
 })
+
 export class AppModule {}
