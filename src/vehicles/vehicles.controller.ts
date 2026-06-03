@@ -4,7 +4,6 @@ import {
   Post,
   Get,
   Body,
-  Req,
   Put,
   Delete,
   UploadedFiles,
@@ -52,8 +51,8 @@ export class VehiclesController {
           const vehicleFolder =
             merk && model ? `${merk}-${model}` : 'unknown-vehicle';
 
-          // Folder utama: uploads/vehicles/merk-model/
-          const folder = `uploads/vehicles/${vehicleFolder}/`;
+          // Folder utama: image/vehicles/merk-model/
+          const folder = `image/vehicles/${vehicleFolder}/`;
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -84,7 +83,7 @@ export class VehiclesController {
         }
       },
       limits: {
-        files: 1,
+        files: 10,
         fileSize: 10 * 1024 * 1024,
       },
     }),
@@ -101,8 +100,22 @@ export class VehiclesController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Folder untuk kontrak
-          const folder = 'uploads/vehicles/';
+          let merk = '';
+          let model = '';
+
+          if (req.body && req.body.merk) {
+            merk = req.body.merk.toString().toLowerCase().replace(/\s+/g, '-');
+          }
+          if (req.body && req.body.model) {
+            model = req.body.model
+              .toString()
+              .toLowerCase()
+              .replace(/\s+/g, '-');
+          }
+
+          const vehicleFolder =
+            merk && model ? `${merk}-${model}` : 'unknown-vehicle';
+          const folder = `image/vehicles/${vehicleFolder}/`;
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -114,8 +127,7 @@ export class VehiclesController {
           const uniqueSuffix =
             Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          const nameWithoutExt = file.originalname.slice(0, -ext.length);
-          callback(null, `vehicle  -${uniqueSuffix}${ext}`);
+          callback(null, `vehicle-photo-${uniqueSuffix}${ext}`);
         },
       }),
       fileFilter: (req, file, callback) => {
@@ -133,7 +145,7 @@ export class VehiclesController {
         }
       },
       limits: {
-        files: 1,
+        files: 10,
         fileSize: 10 * 1024 * 1024,
       },
     }),

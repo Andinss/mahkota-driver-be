@@ -10,6 +10,10 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', 'image'), {
     prefix: '/image/',
   });
+  // Serve static files dari folder images/ (old path)
+  app.useStaticAssets(join(__dirname, '..', 'images'), {
+    prefix: '/images/',
+  });
   app.enableCors({
     origin: ['http://localhost:3000'],
     credentials: true,
