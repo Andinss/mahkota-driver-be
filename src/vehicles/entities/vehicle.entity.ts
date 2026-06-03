@@ -4,7 +4,6 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  BeforeInsert,
 } from 'typeorm';
 
 @Entity('vehicles')
@@ -12,8 +11,8 @@ export class Vehicle {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  vehicle_photo!: string;
+  @Column({ type: 'simple-json', nullable: true })
+  vehicle_photo!: string[];
 
   @Column({ type: 'varchar', length: 100 })
   merk!: string;
@@ -24,13 +23,13 @@ export class Vehicle {
   @Column({ type: 'date' })
   launching_year!: Date;
 
-  @Column({ type: 'varchar', length: 20 })
+  @Column({ type: 'varchar', length: 50 })
   license_plate!: string;
 
-  @Column({ type: 'varchar', length: 17 })
+  @Column({ type: 'varchar', length: 50 })
   vin_number!: string;
 
-  @Column({ type: 'varchar', length: 12, scale: 2 })
+  @Column({ type: 'varchar', length: 100 })
   color!: string;
 
   @Column({
@@ -39,7 +38,7 @@ export class Vehicle {
   })
   status!: string;
 
-  @Column({ type: 'varchar', length: 20 })
+  @Column({ type: 'varchar', length: 50 })
   engine_number!: string;
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })

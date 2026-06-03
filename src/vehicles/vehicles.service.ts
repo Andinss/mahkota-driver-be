@@ -43,14 +43,7 @@ export class VehiclesService {
   async create(data: AddVehicleDto, files?: Express.Multer.File[]) {
     try {
       if (files && files.length > 0) {
-        for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
-          const filePath = file.path.replace(/\\/g, '/');
-
-          if (originalName.includes('vehicle_photo')) {
-            data.vehicle_photo = filePath;
-          }
-        }
+        data.vehicle_photo = files.map((file) => file.path.replace(/\\/g, '/'));
       }
 
       const vehicle = this.vehiclesRepository.create(data);
@@ -94,33 +87,23 @@ export class VehiclesService {
       }
 
       if (files && files.length > 0) {
-        for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
-          const filePath = file.path.replace(/\\/g, '/');
-          let oldFilePath: string | null | undefined = null;
-
-          if (
-            originalName.includes('kontrak') ||
-            originalName.includes('contract')
-          ) {
-            oldFilePath = existingVehicle.vehicle_photo;
-            data.vehicle_photo = filePath;
-          }
-
-          // Hapus file lama jika ada
-          if (oldFilePath && oldFilePath !== filePath) {
+        // Hapus file lama jika ada
+        if (existingVehicle.vehicle_photo) {
+          for (const oldPath of existingVehicle.vehicle_photo) {
             try {
-              const fullPath = oldFilePath.startsWith('/')
-                ? oldFilePath
-                : `./${oldFilePath}`;
+              const fullPath = oldPath.startsWith('/')
+                ? oldPath
+                : `./${oldPath}`;
               if (existsSync(fullPath)) {
                 unlinkSync(fullPath);
               }
             } catch (err) {
-              console.error(`Failed to delete old file ${oldFilePath}:`, err);
+              console.error(`Failed to delete old file ${oldPath}:`, err);
             }
           }
         }
+
+        data.vehicle_photo = files.map((file) => file.path.replace(/\\/g, '/'));
       }
 
       const result = await this.vehiclesRepository.update(
@@ -178,10 +161,8 @@ export class VehiclesService {
       throw new NotFoundException('Vehicle not found');
     }
 
-    const fileFields = [existingVehicle.vehicle_photo];
-
-    for (const filePath of fileFields) {
-      if (filePath) {
+    if (existingVehicle.vehicle_photo) {
+      for (const filePath of existingVehicle.vehicle_photo) {
         try {
           const fullPath = filePath.startsWith('/')
             ? filePath

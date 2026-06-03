@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   IsString,
   IsDate,
@@ -10,9 +10,8 @@ import {
 
 export class AddVehicleDto {
   //step 1
-  @IsString()
   @IsOptional()
-  vehicle_photo!: string;
+  vehicle_photo!: string[];
 
   @IsString()
   merk!: string;
