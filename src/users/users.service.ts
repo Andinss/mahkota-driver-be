@@ -36,6 +36,12 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { id } });
   }
 
+  async findByResetToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: { reset_password_token: token },
+    });
+  }
+
   async update(id: string, data: Partial<User>) {
     if (data.password) {
       data.password = await bcrypt.hash(data.password, 10);
@@ -58,7 +64,7 @@ export class UsersService {
 
   async create(data: Partial<User>) {
     try {
-      const defaultPassword = '123';
+      const defaultPassword = 'Password123!';
       const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
       data.password = hashedPassword; // <-- ini yang kurang

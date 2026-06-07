@@ -39,6 +39,12 @@ export class User {
   })
   role!: string;
 
+  @Column('varchar', { length: 255, nullable: true })
+  reset_password_token!: string | null;
+
+  @Column('timestamp', { nullable: true })
+  reset_password_expires_at!: Date | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

@@ -11,8 +11,6 @@ import { RentalsModule } from './rentals/rentals.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { RoleModule } from './roles/roles.module';
 
-
-
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -33,15 +31,12 @@ import { RoleModule } from './roles/roles.module';
     UsersModule,
     AuthModule,
     DriverModule,
-
     FinancesModule,
     RentalsModule,
     VehiclesModule,
     RoleModule,
-
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-
 export class AppModule {}
