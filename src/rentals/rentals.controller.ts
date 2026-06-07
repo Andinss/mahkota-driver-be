@@ -52,15 +52,13 @@ export class RentalsController {
         },
       }),
       fileFilter: (req, file, callback) => {
-        const allowedMimes = /jpg|jpeg|png|gif|pdf/;
+        const allowedMimes = /pdf/;
         const ext = extname(file.originalname).toLowerCase();
         if (allowedMimes.test(ext)) {
           callback(null, true);
         } else {
           callback(
-            new BadRequestException(
-              'Only image and PDF files are allowed! (jpg, jpeg, png, gif, pdf)',
-            ),
+            new BadRequestException('Only PDF files are allowed! (pdf)'),
             false,
           );
         }
@@ -101,15 +99,13 @@ export class RentalsController {
         },
       }),
       fileFilter: (req, file, callback) => {
-        const allowedMimes = /jpg|jpeg|png|gif|pdf/;
+        const allowedMimes = /pdf/;
         const ext = extname(file.originalname).toLowerCase();
         if (allowedMimes.test(ext)) {
           callback(null, true);
         } else {
           callback(
-            new BadRequestException(
-              'Only image and PDF files are allowed! (jpg, jpeg, png, gif, pdf)',
-            ),
+            new BadRequestException('Only PDF files are allowed! (pdf)'),
             false,
           );
         }
