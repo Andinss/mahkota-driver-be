@@ -33,22 +33,22 @@ export class DriverController {
       storage: diskStorage({
         destination: (req, file, callback) => {
           // Tentukan direktori berdasarkan nama file
-          let folder = 'image/';
+          let folder = 'image/driver';
 
           // Perbaiki: cek file.originalname
           if (file.originalname.toLowerCase().includes('ktp')) {
-            folder = 'image/ktp';
+            folder = 'image/driver/ktp';
           } else if (file.originalname.toLowerCase().includes('sim')) {
-            folder = 'image/sim';
+            folder = 'image/driver/sim';
           } else if (
             file.originalname.toLowerCase().includes('foto') ||
             file.originalname.toLowerCase().includes('profil')
           ) {
-            folder = 'image/photo-driver';
+            folder = 'image/driver/photo-driver';
           } else if (file.originalname.toLowerCase().includes('rumah')) {
-            folder = 'image/garage-photo';
+            folder = 'image/driver/garage-photo';
           } else {
-            folder = 'image/npwp';
+            folder = 'image/driver/npwp';
           }
 
           if (!existsSync(folder)) {
@@ -98,21 +98,21 @@ export class DriverController {
       storage: diskStorage({
         destination: (req, file, callback) => {
           // Tentukan direktori berdasarkan nama file
-          let folder = 'image/';
+          let folder = 'image/driver';
 
           if (file.originalname.toLowerCase().includes('ktp')) {
-            folder = 'image/ktp';
+            folder = 'image/driver  /ktp';
           } else if (file.originalname.toLowerCase().includes('sim')) {
-            folder = 'image/sim';
+            folder = 'image/driver/sim';
           } else if (
             file.originalname.toLowerCase().includes('foto') ||
             file.originalname.toLowerCase().includes('profil')
           ) {
-            folder = 'image/photo-driver';
+            folder = 'image/driver/photo-driver';
           } else if (file.originalname.toLowerCase().includes('rumah')) {
-            folder = 'image/garage-photo';
+            folder = 'image/driver/garage-photo';
           } else {
-            folder = 'image/npwp';
+            folder = 'image/driver/npwp';
           }
 
           if (!existsSync(folder)) {
