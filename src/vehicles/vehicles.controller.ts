@@ -29,6 +29,11 @@ export class VehiclesController {
     return this.vehicleService.findAll();
   }
 
+   @Get('summary')
+  async getSummary() {
+    return this.vehicleService.getSummary();
+  }
+
   @Post('create')
   @UseInterceptors(
     AnyFilesInterceptor({

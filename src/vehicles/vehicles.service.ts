@@ -29,6 +29,42 @@ export class VehiclesService {
     };
   }
 
+   async getSummary() {
+    // Menghitung total semua vehicle
+    const totalVehicles = await this.vehiclesRepository.count();
+
+    // Menghitung vehicle dengan status 'Reserved' (disewa)
+    const rented = await this.vehiclesRepository.count({
+      where: { status: 'Reserved' }
+    });
+
+    // Menghitung vehicle dengan status 'Available' (tersedia)
+    const available = await this.vehiclesRepository.count({
+      where: { status: 'Available' }
+    });
+
+    // Menghitung vehicle dengan status 'Maintenance' (perbaikan)
+    const maintenance = await this.vehiclesRepository.count({
+      where: { status: 'Maintenance' }
+    });
+
+    // Menghitung vehicle dengan status 'Service' (diambil/dikembalikan)
+    const retrieved = await this.vehiclesRepository.count({
+      where: { status: 'Service' }
+    });
+
+    
+
+    // Mengembalikan data summary dalam bentuk object
+    return {
+      totalVehicles,
+      rented,
+      available,
+      maintenance,
+      retrieved,
+    };
+  }
+
   async findByVehicleId(vehicleId: string): Promise<Vehicle | null> {
     let vehicle = await this.vehiclesRepository.findOne({
       where: { id: vehicleId },

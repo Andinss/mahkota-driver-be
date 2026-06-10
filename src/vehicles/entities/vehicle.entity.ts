@@ -32,9 +32,10 @@ export class Vehicle {
   @Column({ type: 'varchar', length: 100 })
   color!: string;
 
-  @Column({
+    @Column({
     type: 'enum',
-    enum: ['Available', 'Maintenance', 'Service', 'Reserved'],
+    enum: ['Available', 'Maintenance', 'Service', 'Reserved', 'rented', 'retrieved'],
+    default: 'Available',
   })
   status!: string;
 
