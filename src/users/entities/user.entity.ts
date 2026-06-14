@@ -4,9 +4,11 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
-import { IsBoolean } from 'class-validator';
+import { Role } from '../../roles/entities/role.entity';
 
 @Entity('users')
 export class User {
@@ -26,18 +28,12 @@ export class User {
   @Column('boolean', { default: true })
   is_active!: boolean;
 
-  @Column('enum', {
-    enum: [
-      'owner',
-      'finance',
-      'supervisor',
-      'field_officer',
-      'driver',
-      'admin',
-      'operator',
-    ],
-  })
-  role!: string;
+  @Column({ type: 'uuid', nullable: true })
+  role_id!: string;
+
+  @ManyToOne(() => Role, (role) => role.users)
+  @JoinColumn({ name: 'role_id' })
+  role!: Role;
 
   @Column('varchar', { length: 255, nullable: true })
   reset_password_token!: string | null;

@@ -20,7 +20,9 @@ export class UsersService {
     message: string;
     data: User[];
   }> {
-    const result = await this.usersRepository.find();
+    const result = await this.usersRepository.find({
+      relations: { role: true },
+    });
     return {
       success: true,
       message: 'Users retrieved successfully',
@@ -29,11 +31,17 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { email } });
+    return this.usersRepository.findOne({
+      where: { email },
+      relations: { role: { permissions: true } },
+    });
   }
 
   async findById(id: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { id } });
+    return this.usersRepository.findOne({
+      where: { id },
+      relations: { role: { permissions: true } },
+    });
   }
 
   async findByResetToken(token: string): Promise<User | null> {
@@ -67,7 +75,7 @@ export class UsersService {
       const defaultPassword = 'Password123!';
       const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
-      data.password = hashedPassword; // <-- ini yang kurang
+      data.password = hashedPassword;
 
       const user = this.usersRepository.create(data);
       const result = await this.usersRepository.save(user);
