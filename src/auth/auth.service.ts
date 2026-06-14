@@ -8,13 +8,15 @@ import { JwtService } from '@nestjs/jwt';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
+import { User } from '../users/entities/user.entity';
 
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -23,6 +25,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailerService: MailerService,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
   ) {}
 
   async login(loginDto: LoginDto) {
@@ -46,7 +50,15 @@ export class AuthService {
       throw new UnauthorizedException('Turnstile verification failed');
     }
 
-    const user = await this.usersService.findByEmail(loginDto.email);
+    const user = await this.usersRepository.findOne({
+      where: { email: loginDto.email },
+      relations: {
+        role: {
+          permissions: true,
+        },
+      },
+    });
+
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -67,6 +79,16 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email,
+        role: user.role
+          ? {
+              id: user.role.id,
+              name: user.role.name,
+              code: user.role.code,
+            }
+          : null,
+        permissions: user.role?.permissions
+          ? user.role.permissions.map((p) => p.name)
+          : [],
       },
     };
   }
@@ -145,6 +167,14 @@ export class AuthService {
   }
 
   async getProfile(user: User) {
-    return plainToInstance(User, user);
+    const profile = await this.usersRepository.findOne({
+      where: { id: user.id },
+      relations: {
+        role: {
+          permissions: true,
+        },
+      },
+    });
+    return plainToInstance(User, profile);
   }
 }

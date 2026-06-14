@@ -10,6 +10,7 @@ import { FinancesModule } from './finances/finances.module';
 import { RentalsModule } from './rentals/rentals.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { RoleModule } from './roles/roles.module';
+import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { RoleModule } from './roles/roles.module';
     RentalsModule,
     VehiclesModule,
     RoleModule,
+    PermissionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

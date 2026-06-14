@@ -1,9 +1,9 @@
 import {
   IsBoolean,
   IsEmail,
-  IsEnum,
+  IsOptional,
   IsString,
-  MinLength,
+  IsUUID,
 } from 'class-validator';
 
 export class AddUserDto {
@@ -13,16 +13,9 @@ export class AddUserDto {
   @IsString()
   username?: string;
 
-  @IsEnum([
-    'owner',
-    'finance',
-    'supervisor',
-    'field_officer',
-    'driver',
-    'admin',
-    'operator ',
-  ])
-  role?: string;
+  @IsOptional()
+  @IsUUID()
+  role_id?: string;
 
   @IsBoolean()
   is_active?: boolean;
