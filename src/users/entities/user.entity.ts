@@ -10,6 +10,7 @@ import {
 import { Exclude } from 'class-transformer';
 import { Role } from '../../roles/entities/role.entity';
 import { IsOptional } from 'class-validator';
+import { Driver } from 'src/drivers/entities/driver.entity';
 
 @Entity('users')
 export class User {
@@ -39,6 +40,13 @@ export class User {
   @ManyToOne(() => Role, (role) => role.users)
   @JoinColumn({ name: 'role_id' })
   role!: Role;
+
+  @Column({ type: 'uuid', nullable: true })
+  driver_id!: string;
+
+  @ManyToOne(() => Driver, (driver) => driver.users)
+  @JoinColumn({ name: 'driver_id' })
+  driver!: Driver;
 
   @Column('varchar', { length: 255, nullable: true })
   reset_password_token!: string | null;
