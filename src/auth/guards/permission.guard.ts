@@ -5,20 +5,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { User } from '../../users/entities/user.entity';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
@@ -28,16 +22,8 @@ export class PermissionGuard implements CanActivate {
       return true;
     }
 
-    const { user: jwtUser } = context.switchToHttp().getRequest();
-
-    const user = await this.usersRepository.findOne({
-      where: { id: jwtUser.id },
-      relations: {
-        role: {
-          permissions: true,
-        },
-      },
-    });
+    const request = context.switchToHttp().getRequest();
+    const user = request.user as User;
 
     if (!user || !user.role || !user.role.permissions) {
       throw new ForbiddenException(

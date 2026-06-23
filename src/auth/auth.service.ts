@@ -17,6 +17,7 @@ import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -59,7 +60,7 @@ export class AuthService {
       },
     });
 
-    if (!user) {
+    if (!user || !user.password) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -166,6 +167,40 @@ export class AuthService {
     });
   }
 
+  async setPassword(setPasswordDto: SetPasswordDto) {
+    const { token, password, password_confirmation } = setPasswordDto;
+
+    if (password !== password_confirmation) {
+      throw new BadRequestException(
+        'Password dan konfirmasi password tidak cocok',
+      );
+    }
+
+    const user = await this.usersService.findBySetPasswordToken(token);
+
+    if (!user) {
+      throw new BadRequestException('Token tidak valid');
+    }
+
+    if (
+      !user.set_password_expires_at ||
+      user.set_password_expires_at < new Date()
+    ) {
+      throw new BadRequestException('Token sudah kedaluwarsa');
+    }
+
+    await this.usersService.update(user.id, {
+      password,
+      set_password_token: null,
+      set_password_expires_at: null,
+    });
+
+    return {
+      success: true,
+      message: 'Password berhasil dibuat. Silakan login.',
+    };
+  }
+
   async getProfile(user: User) {
     const profile = await this.usersRepository.findOne({
       where: { id: user.id },
@@ -175,6 +210,21 @@ export class AuthService {
         },
       },
     });
-    return plainToInstance(User, profile);
+
+    return {
+      id: profile?.id,
+      username: profile?.username,
+      email: profile?.email,
+      role: profile?.role
+        ? {
+            id: profile.role.id,
+            name: profile.role.name,
+            code: profile.role.code,
+          }
+        : null,
+      permissions: profile?.role?.permissions
+        ? profile.role.permissions.map((p) => p.name)
+        : [],
+    };
   }
 }

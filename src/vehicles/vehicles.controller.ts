@@ -9,6 +9,7 @@ import {
   UploadedFiles,
   UseInterceptors,
   Param,
+  UseGuards,
 } from '@nestjs/common';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
@@ -19,22 +20,29 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { VehiclesService } from './vehicles.service';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('vehicles')
 export class VehiclesController {
   constructor(private readonly vehicleService: VehiclesService) {}
 
   @Get()
+  @Permissions('vehicle.read')
   findAll() {
     return this.vehicleService.findAll();
   }
 
    @Get('summary')
+  @Permissions('vehicle.read')
   async getSummary() {
     return this.vehicleService.getSummary();
   }
 
   @Post('create')
+  @Permissions('vehicle.create')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -101,6 +109,7 @@ export class VehiclesController {
   }
 
   @Put('update/:id')
+  @Permissions('vehicle.update')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -164,6 +173,7 @@ export class VehiclesController {
   }
 
   @Delete('delete/:id')
+  @Permissions('vehicle.delete')
   delete(@Param('id') id: string) {
     return this.vehicleService.delete(id);
   }

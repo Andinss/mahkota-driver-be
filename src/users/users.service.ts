@@ -6,13 +6,18 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { MailerService } from '@nestjs-modules/mailer';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    private readonly mailerService: MailerService,
+    private readonly configService: ConfigService,
   ) {}
 
   async findAll(): Promise<{
@@ -44,6 +49,12 @@ export class UsersService {
     });
   }
 
+  async findBySetPasswordToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: { set_password_token: token },
+    });
+  }
+
   async findByResetToken(token: string): Promise<User | null> {
     return this.usersRepository.findOne({
       where: { reset_password_token: token },
@@ -72,22 +83,42 @@ export class UsersService {
 
   async create(data: Partial<User>) {
     try {
-      const defaultPassword = 'Password123!';
-      const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
 
-      data.password = hashedPassword;
+      data.password = null;
+      data.set_password_token = token;
+      data.set_password_expires_at = expiresAt;
 
       const user = this.usersRepository.create(data);
       const result = await this.usersRepository.save(user);
 
+      await this.sendSetPasswordEmail(result.email, token);
+
       return {
         success: true,
-        message: 'User created successfully',
+        message: 'User created successfully, please check email to set password',
         data: result,
       };
     } catch (error) {
       throw new InternalServerErrorException('Failed to create user');
     }
+  }
+
+  private async sendSetPasswordEmail(
+    email: string,
+    token: string,
+  ): Promise<void> {
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const setPasswordLink = `${frontendUrl}/auth/set-password?token=${token}`;
+
+    await this.mailerService.sendMail({
+      to: email,
+      subject: 'Buat Password Akun - Mahkota Drive',
+      template: 'set-password',
+      context: { setPasswordLink, year: new Date().getFullYear() },
+    });
   }
 
   async delete(
