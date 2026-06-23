@@ -7,38 +7,41 @@ import {
   Delete,
   Param,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RoleService } from './roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AddPermissionsToRoleDto } from './dto/add-permissions-to-role.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
-@ApiTags('Roles')
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('roles')
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a new role' })
+  @Permissions('role.create')
   create(@Body() dto: CreateRoleDto) {
     return this.roleService.create(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all roles' })
+  @Permissions('role.read')
   findAll() {
     return this.roleService.findAll();
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get role by ID' })
+  @Permissions('role.read')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.roleService.findById(id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update role by ID' })
+  @Permissions('role.update')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
@@ -47,13 +50,13 @@ export class RoleController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete role by ID' })
+  @Permissions('role.delete')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.roleService.delete(id);
   }
 
   @Post(':id/permissions')
-  @ApiOperation({ summary: 'Assign permissions to role' })
+  @Permissions('role.update')
   assignPermissions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddPermissionsToRoleDto,
@@ -62,7 +65,7 @@ export class RoleController {
   }
 
   @Get(':id/permissions')
-  @ApiOperation({ summary: 'Get permissions of a role' })
+  @Permissions('role.read')
   getPermissions(@Param('id', ParseUUIDPipe) id: string) {
     return this.roleService.getPermissions(id);
   }

@@ -14,8 +14,16 @@ export class AddUserDto {
   username?: string;
 
   @IsOptional()
+  @IsString()
+  fullname?: string;
+
+  @IsOptional()
   @IsUUID()
   role_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  driver_id?: string;
 
   @IsBoolean()
   is_active?: boolean;

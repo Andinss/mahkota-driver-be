@@ -9,6 +9,7 @@ import {
   Delete,
   UploadedFiles,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverService } from './driver.service';
@@ -18,16 +19,22 @@ import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
 import { Express } from 'express';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('drivers')
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
   @Get()
+  @Permissions('driver.read')
   findAll() {
     return this.driverService.findAll();
   }
 
   @Post('create')
+  @Permissions('driver.create')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -93,6 +100,7 @@ export class DriverController {
   }
 
   @Put('update/:employeeId')
+  @Permissions('driver.update')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -158,6 +166,7 @@ export class DriverController {
     return this.driverService.update(employeeId, updateDriverDto, files);
   }
   @Delete('delete/:employeeId')
+  @Permissions('driver.delete')
   delete(@Req() req: any) {
     const employeeId = req.params.employeeId;
     return this.driverService.delete(employeeId);

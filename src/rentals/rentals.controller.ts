@@ -10,6 +10,7 @@ import {
   UploadedFiles,
   UseInterceptors,
   Param,
+  UseGuards,
 } from '@nestjs/common';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
@@ -19,17 +20,23 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { RentalsService } from './rentals.service';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('rentals')
 export class RentalsController {
   constructor(private readonly rentalService: RentalsService) {}
 
   @Get()
+  @Permissions('rental.read')
   findAll() {
     return this.rentalService.findAll();
   }
 
   @Post('create')
+  @Permissions('rental.create')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -77,6 +84,7 @@ export class RentalsController {
   }
 
   @Put('update/:id')
+  @Permissions('rental.update')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -125,6 +133,7 @@ export class RentalsController {
   }
 
   @Delete('delete/:id')
+  @Permissions('rental.delete')
   delete(@Param('id') id: string) {
     return this.rentalService.delete(id);
   }

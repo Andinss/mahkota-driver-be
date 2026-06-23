@@ -7,7 +7,7 @@ import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 
-const modules = ['user', 'role', 'permission', 'driver', 'vehicle', 'transaction'];
+const modules = ['user', 'role', 'permission', 'driver', 'vehicle', 'finance', 'rental'];
 const actions = ['create', 'read', 'update', 'delete'];
 
 const rolesData = [
