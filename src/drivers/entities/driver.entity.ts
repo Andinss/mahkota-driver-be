@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   JoinColumn,
   OneToOne,
+  OneToMany,
 } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
 
@@ -13,10 +14,6 @@ import { User } from 'src/users/entities/user.entity';
 export class Driver {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
-
-  // @OneToOne(() => User)
-  // @JoinColumn({ name: 'user_id' })
-  // user!: User;
 
   //step 1
   @Column({ type: 'varchar', length: 100 })
@@ -74,6 +71,9 @@ export class Driver {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   npwp_photo!: string;
+
+  @OneToMany(() => User, (user) => user.driver)
+  users!: User[];
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

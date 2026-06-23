@@ -64,14 +64,28 @@ async function seed() {
   // Seed roles
   for (const roleData of rolesData) {
     let role = await roleRepository.findOne({
-      where: { code: roleData.code },
+      where: [
+        { code: roleData.code },
+        { name: roleData.name },
+      ],
       relations: { permissions: true },
     });
 
-    if (!role) {
+    if (role) {
+      console.log(`Role already exists: ${roleData.code} (skipped)`);
+      continue;
+    }
+
+    try {
       role = roleRepository.create(roleData);
       role = await roleRepository.save(role);
       console.log(`Created role: ${roleData.code}`);
+    } catch (err: any) {
+      if (err.code === '23505') {
+        console.log(`Role already exists (duplicate): ${roleData.code} (skipped)`);
+        continue;
+      }
+      throw err;
     }
 
     // Assign all permissions to ADMIN role
