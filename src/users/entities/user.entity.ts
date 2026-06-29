@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
@@ -41,12 +42,8 @@ export class User {
   @JoinColumn({ name: 'role_id' })
   role!: Role;
 
-  @Column({ type: 'uuid', nullable: true })
-  driver_id!: string;
-
-  @ManyToOne(() => Driver, (driver) => driver.users)
-  @JoinColumn({ name: 'driver_id' })
-  driver!: Driver;
+  @OneToMany(() => Driver, (driver) => driver.created_by)
+  drivers!: Driver[];
 
   @Column('varchar', { length: 255, nullable: true })
   reset_password_token!: string | null;

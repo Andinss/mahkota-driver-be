@@ -4,8 +4,12 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
   BeforeInsert,
 } from 'typeorm';
+import { Driver } from '../../drivers/entities/driver.entity';
+import { Vehicle } from '../../vehicles/entities/vehicle.entity';
 
 @Entity('rentals')
 export class Rental {
@@ -15,12 +19,19 @@ export class Rental {
   @Column({ type: 'varchar', length: 100, unique: true })
   rental_number!: string;
 
-  //step 1
-  @Column({ type: 'varchar', length: 100 })
-  driver_active!: string;
+  @Column({ type: 'uuid' })
+  driver_id!: string;
 
-  @Column({ type: 'varchar', length: 100 })
-  car_model!: string;
+  @ManyToOne(() => Driver)
+  @JoinColumn({ name: 'driver_id' })
+  driver!: Driver;
+
+  @Column({ type: 'uuid' })
+  vehicle_id!: string;
+
+  @ManyToOne(() => Vehicle)
+  @JoinColumn({ name: 'vehicle_id' })
+  vehicle!: Vehicle;
 
   @Column({ type: 'date' })
   start_date!: Date;
@@ -58,7 +69,6 @@ export class Rental {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   total_revenue!: number;
 
-  //default
   @CreateDateColumn({ type: 'timestamp' })
   created_at!: Date;
 

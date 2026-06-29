@@ -21,10 +21,6 @@ export class AddUserDto {
   @IsUUID()
   role_id?: string;
 
-  @IsOptional()
-  @IsUUID()
-  driver_id?: string;
-
   @IsBoolean()
   is_active?: boolean;
 }

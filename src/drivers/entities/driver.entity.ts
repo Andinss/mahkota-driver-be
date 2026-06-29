@@ -4,9 +4,8 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
   JoinColumn,
-  OneToOne,
-  OneToMany,
 } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
 
@@ -72,8 +71,12 @@ export class Driver {
   @Column({ type: 'varchar', length: 255, nullable: true })
   npwp_photo!: string;
 
-  @OneToMany(() => User, (user) => user.driver)
-  users!: User[];
+  @Column({ type: 'uuid', nullable: true })
+  created_by_id!: string;
+
+  @ManyToOne(() => User, (user) => user.drivers)
+  @JoinColumn({ name: 'created_by_id' })
+  created_by!: User;
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

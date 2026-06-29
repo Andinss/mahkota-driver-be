@@ -6,15 +6,15 @@ import {
   IsEnum,
   IsNumber,
   Min,
+  IsUUID,
 } from 'class-validator';
 
 export class AddRentalDto {
-  //step 1
-  @IsString()
-  driver_active!: string;
+  @IsUUID()
+  driver_id!: string;
 
-  @IsString()
-  car_model!: string;
+  @IsUUID()
+  vehicle_id!: string;
 
   @IsDate()
   @Type(() => Date)

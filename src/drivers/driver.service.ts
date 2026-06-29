@@ -16,6 +16,7 @@ export class DriverService {
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
   ) {}
+
   async findAll(): Promise<{
     success: boolean;
     message: string;
@@ -36,7 +37,8 @@ export class DriverService {
     }
     return driver;
   }
-  async create(data: AddDriverDto, files?: Express.Multer.File[]) {
+
+  async create(data: AddDriverDto, userId: string, files?: Express.Multer.File[]) {
     try {
       if (files && files.length > 0) {
         for (const file of files) {
@@ -60,7 +62,10 @@ export class DriverService {
         }
       }
 
-      const driver = this.driversRepository.create(data);
+      const driver = this.driversRepository.create({
+        ...data,
+        created_by_id: userId,
+      } as unknown as Driver);
       const result = await this.driversRepository.save(driver);
 
       return {
@@ -80,13 +85,13 @@ export class DriverService {
       throw new InternalServerErrorException('Failed to create driver');
     }
   }
+
   async update(
     employeeId: string,
     data: Partial<Driver>,
     files?: Express.Multer.File[],
   ) {
     try {
-      // 1. Ambil data driver lama (by employee_id atau fallback id UUID)
       let existingDriver = await this.driversRepository.findOne({
         where: { employee_id: employeeId },
       });
@@ -101,14 +106,12 @@ export class DriverService {
         throw new NotFoundException('Driver not found');
       }
 
-      // 2. Jika ada file baru, proses upload dan hapus file lama
       if (files && files.length > 0) {
         for (const file of files) {
           const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
           let oldFilePath: string | null | undefined = null;
 
-          // Tentukan field name dan old file path berdasarkan tipe file
           if (originalName.includes('ktp')) {
             oldFilePath = existingDriver.national_id_card;
             data.national_id_card = filePath;
@@ -129,7 +132,6 @@ export class DriverService {
             data.npwp_photo = filePath;
           }
 
-          // Hapus file lama jika ada
           if (oldFilePath && oldFilePath !== filePath) {
             try {
               const fullPath = oldFilePath.startsWith('/')
@@ -145,7 +147,8 @@ export class DriverService {
         }
       }
 
-      const result = await this.driversRepository.update(existingDriver.id, data);
+      const { created_by_id, ...safeData } = data as any;
+      const result = await this.driversRepository.update(existingDriver.id, safeData);
 
       if (result.affected === 0) {
         throw new NotFoundException('Driver not found');
@@ -179,6 +182,7 @@ export class DriverService {
       throw new InternalServerErrorException('Failed to update driver');
     }
   }
+
   async delete(employeeId: string): Promise<{ success: boolean; message: string }> {
     let existingDriver = await this.driversRepository.findOne({
       where: { employee_id: employeeId },
@@ -194,7 +198,6 @@ export class DriverService {
       throw new NotFoundException('Driver not found');
     }
 
-    // Hapus file-file terkait
     const fileFields = [
       existingDriver.profile_photo,
       existingDriver.national_id_card,

@@ -6,13 +6,9 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { Column } from 'typeorm';
 
 export class AddDriverDto {
   //step 1
-  // @IsUUID()
-  // user_id!: string;
-
   @IsString()
   first_name!: string;
 

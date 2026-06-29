@@ -7,47 +7,107 @@ import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 
-const modules = ['user', 'role', 'permission', 'driver', 'vehicle', 'finance', 'rental'];
-const actions = ['create', 'read', 'update', 'delete'];
+const modulePermissions: Record<string, string[]> = {
+  user: ['create', 'read', 'update', 'delete', 'activate', 'manage_role'],
+  role: ['create', 'read', 'update', 'delete', 'assign_permissions'],
+  permission: ['create', 'read', 'update', 'delete'],
+  driver: ['create', 'read.all', 'read.own', 'update.all', 'update.own', 'delete.all', 'delete.own', 'assign_vehicle'],
+  vehicle: ['create', 'read', 'update', 'delete', 'change_status'],
+  rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
+  finance: ['create', 'read', 'update', 'delete', 'approve'],
+};
 
-const rolesData = [
-  { name: 'Administrator', code: 'ADMIN', description: 'Full system access' },
-  { name: 'Supervisor', code: 'SUPERVISOR', description: 'Supervisor level access' },
-  { name: 'Finance', code: 'FINANCE', description: 'Finance department access' },
-  { name: 'Field Officer', code: 'FIELD_OFFICER', description: 'Field operations access' },
-  { name: 'Driver', code: 'DRIVER', description: 'Driver limited access' },
-  { name: 'Owner', code: 'OWNER', description: 'Business owner access' },
-  { name: 'Operator', code: 'OPERATOR', description: 'System operator access' },
+const allPermissionNames: string[] = [];
+for (const [mod, actions] of Object.entries(modulePermissions)) {
+  for (const action of actions) {
+    allPermissionNames.push(`${mod}.${action}`);
+  }
+}
+
+interface RoleSeed {
+  name: string;
+  code: string;
+  description: string;
+  permissionFilter: (name: string) => boolean;
+}
+
+const rolesData: RoleSeed[] = [
+  {
+    name: 'Administrator', code: 'ADMIN', description: 'Full system access',
+    permissionFilter: () => true,
+  },
+  {
+    name: 'Supervisor', code: 'SUPERVISOR', description: 'Supervisor - manage own drivers (max 10)',
+    permissionFilter: (name) => {
+      const perms = [
+        'driver.create', 'driver.read.own', 'driver.update.own', 'driver.delete.own', 'driver.assign_vehicle',
+        'vehicle.read',
+        'rental.read', 'rental.create',
+      ];
+      return perms.includes(name);
+    },
+  },
+  {
+    name: 'Finance', code: 'FINANCE', description: 'Finance department access',
+    permissionFilter: (name) => {
+      const perms = [
+        'finance.create', 'finance.read', 'finance.update', 'finance.approve',
+        'rental.read',
+      ];
+      return perms.includes(name);
+    },
+  },
+  {
+    name: 'Field Officer', code: 'FIELD_OFFICER', description: 'Field operations access',
+    permissionFilter: (name) => {
+      const perms = [
+        'driver.read.all', 'driver.assign_vehicle',
+        'vehicle.read',
+        'rental.read',
+      ];
+      return perms.includes(name);
+    },
+  },
+  {
+    name: 'Driver', code: 'DRIVER', description: 'Driver - no dashboard access',
+    permissionFilter: () => false,
+  },
+  {
+    name: 'Owner', code: 'OWNER', description: 'Business owner - read-only reports',
+    permissionFilter: (name) => {
+      const perms = [
+        'driver.read.all', 'vehicle.read', 'rental.read', 'finance.read',
+      ];
+      return perms.includes(name);
+    },
+  },
+  {
+    name: 'Operator', code: 'OPERATOR', description: 'System operator - basic read access',
+    permissionFilter: (name) => {
+      const perms = [
+        'driver.read.all', 'vehicle.read', 'rental.read',
+      ];
+      return perms.includes(name);
+    },
+  },
 ];
 
 async function seed() {
   const app = await NestFactory.createApplicationContext(AppModule);
 
   const roleRepository = app.get<Repository<Role>>(getRepositoryToken(Role));
-  const permissionRepository = app.get<Repository<Permission>>(
-    getRepositoryToken(Permission),
-  );
+  const permissionRepository = app.get<Repository<Permission>>(getRepositoryToken(Permission));
   const userRepository = app.get<Repository<User>>(getRepositoryToken(User));
 
   // Seed permissions
-  const permissionNames: string[] = [];
-  for (const module of modules) {
-    for (const action of actions) {
-      permissionNames.push(`${module}.${action}`);
-    }
-  }
-
   const existingPermissions = await permissionRepository.find();
   const existingNames = existingPermissions.map((p) => p.name);
   const newPermissions: Permission[] = [];
 
-  for (const permName of permissionNames) {
+  for (const permName of allPermissionNames) {
     if (!existingNames.includes(permName)) {
       const [module] = permName.split('.');
-      const permission = permissionRepository.create({
-        name: permName,
-        module,
-      });
+      const permission = permissionRepository.create({ name: permName, module });
       newPermissions.push(permission);
     }
   }
@@ -61,7 +121,7 @@ async function seed() {
 
   const allPermissions = await permissionRepository.find();
 
-  // Seed roles
+  // Seed roles with permissions
   for (const roleData of rolesData) {
     let role = await roleRepository.findOne({
       where: [
@@ -72,12 +132,19 @@ async function seed() {
     });
 
     if (role) {
-      console.log(`Role already exists: ${roleData.code} (skipped)`);
+      // Update existing role permissions
+      role.permissions = allPermissions.filter((p) => roleData.permissionFilter(p.name));
+      await roleRepository.save(role);
+      console.log(`Updated permissions for role: ${roleData.code}`);
       continue;
     }
 
     try {
-      role = roleRepository.create(roleData);
+      role = roleRepository.create({
+        name: roleData.name,
+        code: roleData.code,
+        description: roleData.description,
+      });
       role = await roleRepository.save(role);
       console.log(`Created role: ${roleData.code}`);
     } catch (err: any) {
@@ -88,22 +155,10 @@ async function seed() {
       throw err;
     }
 
-    // Assign all permissions to ADMIN role
-    if (roleData.code === 'ADMIN') {
-      role.permissions = allPermissions;
-      await roleRepository.save(role);
-      console.log(`Assigned all permissions to ${roleData.code}`);
-    }
-
-    // Assign read permissions to common roles
-    if (['SUPERVISOR', 'FIELD_OFFICER'].includes(roleData.code)) {
-      const readPermissions = allPermissions.filter((p) =>
-        p.name.endsWith('.read'),
-      );
-      role.permissions = readPermissions;
-      await roleRepository.save(role);
-      console.log(`Assigned read permissions to ${roleData.code}`);
-    }
+    // Assign permissions
+    role.permissions = allPermissions.filter((p) => roleData.permissionFilter(p.name));
+    await roleRepository.save(role);
+    console.log(`Assigned permissions to ${roleData.code}`);
   }
 
   // Seed admin user
@@ -112,10 +167,7 @@ async function seed() {
   });
 
   if (!existingAdmin) {
-    const adminRole = await roleRepository.findOne({
-      where: { code: 'ADMIN' },
-    });
-
+    const adminRole = await roleRepository.findOne({ where: { code: 'ADMIN' } });
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
     const admin = userRepository.create({

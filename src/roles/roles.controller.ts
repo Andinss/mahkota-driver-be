@@ -64,6 +64,15 @@ export class RoleController {
     return this.roleService.assignPermissions(id, dto);
   }
 
+  @Delete(':id/permissions')
+  @Permissions('role.update')
+  removePermissions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddPermissionsToRoleDto,
+  ) {
+    return this.roleService.removePermissions(id, dto);
+  }
+
   @Get(':id/permissions')
   @Permissions('role.read')
   getPermissions(@Param('id', ParseUUIDPipe) id: string) {

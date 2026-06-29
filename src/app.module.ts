@@ -11,6 +11,11 @@ import { RentalsModule } from './rentals/rentals.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { RoleModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { SupervisorModule } from './supervisor/supervisor.module';
+import { VehicleAssignmentService } from './vehicle-assignment/vehicle-assignment.service';
+import { VehicleAssignmentController } from './vehicle-assignment/vehicle-assignment.controller';
+import { VehicleAssignmentModule } from './vehicle-assignment/vehicle-assignment.module';
+import { FieldOfficerModule } from './field-officer/field-officer.module';
 
 @Module({
   imports: [
@@ -37,8 +42,11 @@ import { PermissionsModule } from './permissions/permissions.module';
     VehiclesModule,
     RoleModule,
     PermissionsModule,
+    FieldOfficerModule,
+    SupervisorModule,
+    VehicleAssignmentModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, VehicleAssignmentController],
+  providers: [AppService, VehicleAssignmentService],
 })
 export class AppModule {}
