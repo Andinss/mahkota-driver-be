@@ -94,12 +94,16 @@ export class UsersService {
       const user = this.usersRepository.create(data);
       const result = await this.usersRepository.save(user);
 
-      await this.sendSetPasswordEmail(result.email, token);
+      try {
+        await this.sendSetPasswordEmail(result.email, token);
+      } catch (emailError) {
+        console.error('Failed to send set-password email:', emailError);
+      }
 
       return {
         success: true,
         message: 'User created successfully, please check email to set password',
-        data: result,
+        data: { ...result, set_password_token: token },
       };
     } catch (error) {
       throw new InternalServerErrorException('Failed to create user');

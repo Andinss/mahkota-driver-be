@@ -1,12 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDate, IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class UpdateDriverDto {
-  //step 1
-  @IsOptional()
-  @IsUUID()
-  user_id!: string;
-
   @IsOptional()
   @IsString()
   first_name!: string;

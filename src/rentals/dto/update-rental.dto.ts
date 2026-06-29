@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   IsString,
   IsDate,
@@ -6,17 +6,17 @@ import {
   IsEnum,
   IsNumber,
   Min,
+  IsUUID,
 } from 'class-validator';
 
 export class UpdateRentalDto {
-  //step 1
   @IsOptional()
-  @IsString()
-  driver_active!: string;
+  @IsUUID()
+  driver_id!: string;
 
   @IsOptional()
-  @IsString()
-  car_model!: string;
+  @IsUUID()
+  vehicle_id!: string;
 
   @IsOptional()
   @IsDate()

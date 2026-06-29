@@ -28,7 +28,7 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
   @Get()
-  @Permissions('driver.read')
+  @Permissions('driver.read.all')
   findAll() {
     return this.driverService.findAll();
   }
@@ -95,12 +95,13 @@ export class DriverController {
   create(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() addDriverDto: AddDriverDto,
+    @Req() req: any,
   ) {
-    return this.driverService.create(addDriverDto, files);
+    return this.driverService.create(addDriverDto, req.user.id, files);
   }
 
   @Put('update/:employeeId')
-  @Permissions('driver.update')
+  @Permissions('driver.update.all')
   @UseInterceptors(
     AnyFilesInterceptor({
       storage: diskStorage({
@@ -166,7 +167,7 @@ export class DriverController {
     return this.driverService.update(employeeId, updateDriverDto, files);
   }
   @Delete('delete/:employeeId')
-  @Permissions('driver.delete')
+  @Permissions('driver.delete.all')
   delete(@Req() req: any) {
     const employeeId = req.params.employeeId;
     return this.driverService.delete(employeeId);

@@ -99,12 +99,41 @@ export class RoleService {
       throw new BadRequestException('Some permissions not found');
     }
 
-    role.permissions = permissions;
+    const existingIds = new Set(role.permissions.map((p) => p.id));
+    const newIds = dto.permissionIds.filter((id) => !existingIds.has(id));
+    if (newIds.length > 0) {
+      const newPerms = permissions.filter((p) => newIds.includes(p.id));
+      role.permissions = [...role.permissions, ...newPerms];
+      await this.rolesRepository.save(role);
+    }
+
+    const saved = await this.rolesRepository.findOne({
+      where: { id: roleId },
+      relations: { permissions: true },
+    });
+
+    return {
+      success: true,
+      message: 'Permissions added successfully',
+      data: saved,
+    };
+  }
+
+  async removePermissions(roleId: string, dto: AddPermissionsToRoleDto) {
+    const role = await this.rolesRepository.findOne({
+      where: { id: roleId },
+      relations: { permissions: true },
+    });
+    if (!role) throw new NotFoundException('Role not found');
+
+    role.permissions = role.permissions.filter(
+      (p) => !dto.permissionIds.includes(p.id),
+    );
     const saved = await this.rolesRepository.save(role);
 
     return {
       success: true,
-      message: 'Permissions assigned successfully',
+      message: 'Permissions removed successfully',
       data: saved,
     };
   }

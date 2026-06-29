@@ -22,7 +22,9 @@ export class RentalsService {
     message: string;
     data: Rental[];
   }> {
-    const result = await this.rentalsRepository.find();
+    const result = await this.rentalsRepository.find({
+      relations: { driver: true, vehicle: true },
+    });
     return {
       success: true,
       message: 'Rentals retrieved successfully',
@@ -33,10 +35,12 @@ export class RentalsService {
   async findByRentalId(rentalId: string): Promise<Rental | null> {
     let rental = await this.rentalsRepository.findOne({
       where: { id: rentalId },
+      relations: { driver: true, vehicle: true },
     });
     if (!rental && /^[0-9a-f-]{36}$/i.test(rentalId)) {
       rental = await this.rentalsRepository.findOne({
         where: { id: rentalId },
+        relations: { driver: true, vehicle: true },
       });
     }
     return rental;
@@ -113,7 +117,6 @@ export class RentalsService {
             data.document_contract = filePath;
           }
 
-          // Hapus file lama jika ada
           if (oldFilePath && oldFilePath !== filePath) {
             try {
               const fullPath = oldFilePath.startsWith('/')
