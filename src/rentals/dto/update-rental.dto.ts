@@ -77,4 +77,8 @@ export class UpdateRentalDto {
   @Min(0)
   @Type(() => Number)
   total_revenue!: number;
+
+  @IsOptional()
+  @IsEnum(['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'])
+  payment_status!: string;
 }

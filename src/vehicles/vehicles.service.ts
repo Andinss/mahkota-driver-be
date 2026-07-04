@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Vehicle } from './entities/vehicle.entity';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
+import { VehicleQueryDto } from './dto/vehicle-query.dto';
 
 @Injectable()
 export class VehiclesService {
@@ -16,52 +17,116 @@ export class VehiclesService {
     private readonly vehiclesRepository: Repository<Vehicle>,
   ) {}
 
-  async findAll(): Promise<{
-    success: boolean;
-    message: string;
-    data: Vehicle[];
-  }> {
-    const result = await this.vehiclesRepository.find();
+  async findAll(query?: VehicleQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.vehiclesRepository
+      .createQueryBuilder('v')
+      .orderBy('v.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.where(
+        '(v.merk ILIKE :search OR v.model ILIKE :search OR v.license_plate ILIKE :search OR v.vin_number ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query?.status) {
+      qb.andWhere('v.status = :status', { status: query.status });
+    }
+
+    const [data, total] = await qb
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const totalPages = Math.ceil(total / limit);
+
     return {
       success: true,
       message: 'Vehicles retrieved successfully',
-      data: result,
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
     };
   }
 
-   async getSummary() {
-    // Menghitung total semua vehicle
+  async findById(id: string) {
+    const vehicle = await this.vehiclesRepository.findOne({
+      where: { id },
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle retrieved successfully',
+      data: vehicle,
+    };
+  }
+
+  async findDetailById(id: string) {
+    const vehicle = await this.vehiclesRepository.findOne({
+      where: { id },
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    const rentalCount = 0;
+
+    return {
+      success: true,
+      message: 'Vehicle detail retrieved successfully',
+      data: {
+        ...vehicle,
+        rental_count: rentalCount,
+      },
+    };
+  }
+
+  async getSummary() {
     const totalVehicles = await this.vehiclesRepository.count();
 
-    // Menghitung vehicle dengan status 'Reserved' (disewa)
-    const rented = await this.vehiclesRepository.count({
-      where: { status: 'Reserved' }
-    });
+    const statusCounts = await this.vehiclesRepository
+      .createQueryBuilder('v')
+      .select('v.status', 'status')
+      .addSelect('COUNT(v.id)', 'count')
+      .groupBy('v.status')
+      .getRawMany();
 
-    // Menghitung vehicle dengan status 'Available' (tersedia)
-    const available = await this.vehiclesRepository.count({
-      where: { status: 'Available' }
-    });
+    const statusBreakdown: Record<string, number> = {};
+    for (const row of statusCounts) {
+      statusBreakdown[row.status] = Number(row.count);
+    }
 
-    // Menghitung vehicle dengan status 'Maintenance' (perbaikan)
-    const maintenance = await this.vehiclesRepository.count({
-      where: { status: 'Maintenance' }
-    });
+    const totalRented = statusBreakdown['Reserved'] || 0;
+    const totalAvailable = statusBreakdown['Available'] || 0;
+    const totalMaintenance = statusBreakdown['Maintenance'] || 0;
+    const totalService = statusBreakdown['Service'] || 0;
+    const totalRetrieved = statusBreakdown['retrieved'] || 0;
 
-    // Menghitung vehicle dengan status 'Service' (diambil/dikembalikan)
-    const retrieved = await this.vehiclesRepository.count({
-      where: { status: 'Service' }
-    });
-
-    
-
-    // Mengembalikan data summary dalam bentuk object
     return {
-      totalVehicles,
-      rented,
-      available,
-      maintenance,
-      retrieved,
+      success: true,
+      message: 'Vehicle summary retrieved successfully',
+      data: {
+        total_vehicles: totalVehicles,
+        rented: totalRented,
+        available: totalAvailable,
+        maintenance: totalMaintenance,
+        service: totalService,
+        retrieved: totalRetrieved,
+        status_breakdown: statusBreakdown,
+      },
     };
   }
 
@@ -76,6 +141,7 @@ export class VehiclesService {
     }
     return vehicle;
   }
+
   async create(data: AddVehicleDto, files?: Express.Multer.File[]) {
     try {
       if (files && files.length > 0) {
@@ -102,6 +168,7 @@ export class VehiclesService {
       throw new InternalServerErrorException('Failed to create vehicle');
     }
   }
+
   async update(
     vehicleId: string,
     data: Partial<Vehicle>,
@@ -123,7 +190,6 @@ export class VehiclesService {
       }
 
       if (files && files.length > 0) {
-        // Hapus file lama jika ada
         if (existingVehicle.vehicle_photo) {
           for (const oldPath of existingVehicle.vehicle_photo) {
             try {
