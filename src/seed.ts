@@ -15,6 +15,10 @@ const modulePermissions: Record<string, string[]> = {
   vehicle: ['create', 'read', 'update', 'delete', 'change_status'],
   rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
   finance: ['create', 'read', 'update', 'delete', 'approve'],
+  late_payment: ['read', 'approve'],
+  monitoring: ['read'],
+  setting: ['create', 'read', 'update', 'delete'],
+  audit: ['read'],
 };
 
 const allPermissionNames: string[] = [];
@@ -64,6 +68,7 @@ const rolesData: RoleSeed[] = [
         'driver.read.all', 'driver.assign_vehicle',
         'vehicle.read',
         'rental.read',
+        'monitoring.read',
       ];
       return perms.includes(name);
     },

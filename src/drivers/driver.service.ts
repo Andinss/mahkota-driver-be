@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Driver } from './entities/driver.entity';
 import { AddDriverDto } from './dto/add-driver.dto';
+import { DriverQueryDto } from './dto/driver-query.dto';
 
 @Injectable()
 export class DriverService {
@@ -17,16 +18,99 @@ export class DriverService {
     private readonly driversRepository: Repository<Driver>,
   ) {}
 
-  async findAll(): Promise<{
-    success: boolean;
-    message: string;
-    data: Driver[];
-  }> {
-    const result = await this.driversRepository.find();
+  async findAll(query?: DriverQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.driversRepository
+      .createQueryBuilder('d')
+      .leftJoinAndSelect('d.created_by', 'created_by')
+      .orderBy('d.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.where(
+        '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [data, total] = await qb
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const totalPages = Math.ceil(total / limit);
+
     return {
       success: true,
       message: 'Drivers retrieved successfully',
-      data: result,
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
+  }
+
+  async findById(id: string) {
+    const driver = await this.driversRepository.findOne({
+      where: { id },
+      relations: { created_by: true },
+    });
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    return {
+      success: true,
+      message: 'Driver retrieved successfully',
+      data: driver,
+    };
+  }
+
+  async findDetailById(id: string) {
+    const driver = await this.driversRepository.findOne({
+      where: { id },
+      relations: { created_by: true },
+    });
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    return {
+      success: true,
+      message: 'Driver detail retrieved successfully',
+      data: driver,
+    };
+  }
+
+  async getSummary() {
+    const totalDrivers = await this.driversRepository.count();
+
+    const genderBreakdown = await this.driversRepository
+      .createQueryBuilder('d')
+      .select('d.gender', 'gender')
+      .addSelect('COUNT(d.id)', 'count')
+      .groupBy('d.gender')
+      .getRawMany();
+
+    const genderCount: Record<string, number> = {};
+    for (const row of genderBreakdown) {
+      genderCount[row.gender] = Number(row.count);
+    }
+
+    return {
+      success: true,
+      message: 'Driver summary retrieved successfully',
+      data: {
+        total_drivers: totalDrivers,
+        gender_breakdown: genderCount,
+      },
     };
   }
 

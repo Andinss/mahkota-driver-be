@@ -7,24 +7,43 @@ import {
   Put,
   Delete,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
 import { FinancesService } from './finances.service';
 import { AddFinanceDto } from './dto/add-finance.dto';
+import { FinanceQueryDto } from './dto/finance-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
+import { AuditService } from '../audit/audit.service';
+import { extractRequestMeta } from '../audit/audit.utils';
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('finances')
 export class FinancesController {
-  constructor(private readonly financesService: FinancesService) {}
+  constructor(
+    private readonly financesService: FinancesService,
+    private readonly auditService: AuditService,
+  ) {}
 
   @Get()
   @Permissions('finance.read')
-  findAll() {
-    return this.financesService.findAll();
+  findAll(@Query() query: FinanceQueryDto) {
+    return this.financesService.findAll(query);
+  }
+
+  @Get('summary')
+  @Permissions('finance.read')
+  getSummary() {
+    return this.financesService.getSummary();
+  }
+
+  @Get('detail/:id')
+  @Permissions('finance.read')
+  findDetail(@Param('id') id: string) {
+    return this.financesService.findDetailById(id);
   }
 
   @Get(':id')
@@ -35,21 +54,55 @@ export class FinancesController {
 
   @Post('create')
   @Permissions('finance.create')
-  create(@Body() addFinanceDto: AddFinanceDto) {
-    return this.financesService.create(addFinanceDto);
+  async create(@Body() addFinanceDto: AddFinanceDto, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.create(addFinanceDto);
+    const finance = result?.data || result;
+    this.auditService.create({
+      user_id: req.user?.id,
+      username: req.user?.username || 'system',
+      action: 'CREATE_FINANCE',
+      target: `finance/${(finance as any)?.id || ''}`,
+      details: `Created finance ${addFinanceDto.reference_number}`,
+      ...meta,
+      status: 'success',
+    }).catch(() => {});
+    return result;
   }
 
   @Put('update/:id')
   @Permissions('finance.update')
-  update(@Body() updateFinanceDto: Partial<AddFinanceDto>, @Req() req: any) {
+  async update(@Body() updateFinanceDto: Partial<AddFinanceDto>, @Req() req: any) {
     const financeId = req.params.id;
-    return this.financesService.update(financeId, updateFinanceDto);
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.update(financeId, updateFinanceDto);
+    this.auditService.create({
+      user_id: req.user?.id,
+      username: req.user?.username || 'system',
+      action: 'UPDATE_FINANCE',
+      target: `finance/${financeId}`,
+      details: `Updated finance ${financeId}`,
+      ...meta,
+      status: 'success',
+    }).catch(() => {});
+    return result;
   }
 
   @Delete('delete/:employid')
   @Permissions('finance.delete')
-  delete(@Req() req: any) {
+  async delete(@Req() req: any) {
     const financeId = req.params.employid;
-    return this.financesService.delete(financeId);
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.delete(financeId);
+    this.auditService.create({
+      user_id: req.user?.id,
+      username: req.user?.username || 'system',
+      action: 'DELETE_FINANCE',
+      target: `finance/${financeId}`,
+      details: `Deleted finance ${financeId}`,
+      ...meta,
+      status: 'success',
+    }).catch(() => {});
+    return result;
   }
 }

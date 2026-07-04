@@ -6,10 +6,12 @@ import {
   Body,
   Req,
   Put,
+  Patch,
   Delete,
   UploadedFiles,
   UseInterceptors,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { extname } from 'path';
@@ -20,6 +22,7 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { RentalsService } from './rentals.service';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
+import { RentalQueryDto } from './dto/rental-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -31,8 +34,32 @@ export class RentalsController {
 
   @Get()
   @Permissions('rental.read')
-  findAll() {
-    return this.rentalService.findAll();
+  findAll(@Query() query: RentalQueryDto) {
+    return this.rentalService.findAll(query);
+  }
+
+  @Get('auto-set-late')
+  @Permissions('rental.update')
+  autoSetLate() {
+    return this.rentalService.autoSetLateStatus();
+  }
+
+  @Get('summary')
+  @Permissions('rental.read')
+  getSummary() {
+    return this.rentalService.getSummary();
+  }
+
+  @Get('detail/:id')
+  @Permissions('rental.read')
+  findDetail(@Param('id') id: string) {
+    return this.rentalService.findDetailById(id);
+  }
+
+  @Get(':id')
+  @Permissions('rental.read')
+  findOne(@Param('id') id: string) {
+    return this.rentalService.findById(id);
   }
 
   @Post('create')
@@ -41,7 +68,6 @@ export class RentalsController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Folder untuk kontrak
           const folder = 'uploads/kontrak/';
 
           if (!existsSync(folder)) {
@@ -71,8 +97,8 @@ export class RentalsController {
         }
       },
       limits: {
-        files: 1, // max 1 file (document contract)
-        fileSize: 10 * 1024 * 1024, // 10MB per file
+        files: 1,
+        fileSize: 10 * 1024 * 1024,
       },
     }),
   )
@@ -89,7 +115,6 @@ export class RentalsController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Folder untuk kontrak
           const folder = 'uploads/kontrak/';
 
           if (!existsSync(folder)) {
@@ -130,6 +155,15 @@ export class RentalsController {
     @Param('id') id: string,
   ) {
     return this.rentalService.update(id, updateRentalDto, files);
+  }
+
+  @Patch(':id/status')
+  @Permissions('rental.update')
+  updateStatus(
+    @Param('id') id: string,
+    @Body('payment_status') paymentStatus: string,
+  ) {
+    return this.rentalService.updatePaymentStatus(id, paymentStatus);
   }
 
   @Delete('delete/:id')

@@ -16,6 +16,9 @@ import { VehicleAssignmentService } from './vehicle-assignment/vehicle-assignmen
 import { VehicleAssignmentController } from './vehicle-assignment/vehicle-assignment.controller';
 import { VehicleAssignmentModule } from './vehicle-assignment/vehicle-assignment.module';
 import { FieldOfficerModule } from './field-officer/field-officer.module';
+import { LatePaymentsModule } from './late-payments/late-payments.module';
+import { SettingsModule } from './settings/settings.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -45,6 +48,9 @@ import { FieldOfficerModule } from './field-officer/field-officer.module';
     FieldOfficerModule,
     SupervisorModule,
     VehicleAssignmentModule,
+    LatePaymentsModule,
+    SettingsModule,
+    AuditModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [AppService, VehicleAssignmentService],

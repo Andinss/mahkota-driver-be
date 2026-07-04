@@ -12,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
+import { AuditService } from '../audit/audit.service';
 
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
@@ -26,11 +27,12 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailerService: MailerService,
+    private readonly auditService: AuditService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, meta?: { ip_address: string; user_agent: string }) {
     const formData = new URLSearchParams();
     formData.append(
       'secret',
@@ -61,6 +63,15 @@ export class AuthService {
     });
 
     if (!user || !user.password) {
+      await this.auditService.create({
+        username: loginDto.email,
+        action: 'Login Failed',
+        target: 'Auth',
+        details: 'User not found or no password set',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -69,10 +80,30 @@ export class AuthService {
       user.password,
     );
     if (!isPasswordValid) {
+      await this.auditService.create({
+        username: loginDto.email,
+        action: 'Login Failed',
+        target: 'Auth',
+        details: 'Invalid password',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const payload = { sub: user.id };
+
+    await this.auditService.create({
+      user_id: user.id,
+      username: user.username,
+      action: 'Login',
+      target: 'Auth',
+      details: `User ${user.username} logged in`,
+      ip_address: meta?.ip_address,
+      user_agent: meta?.user_agent,
+      status: 'success',
+    }).catch(() => {});
 
     return {
       access_token: this.jwtService.sign(payload),
@@ -94,7 +125,7 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto, meta?: { ip_address: string; user_agent: string }) {
     const { email } = forgotPasswordDto;
 
     const user = await this.usersService.findByEmail(email);
@@ -110,6 +141,27 @@ export class AuthService {
       });
 
       await this.sendResetPasswordEmail(email, token);
+
+      this.auditService.create({
+        user_id: user.id,
+        username: user.username,
+        action: 'Forgot Password',
+        target: 'Auth',
+        details: `Password reset requested for ${email}`,
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'success',
+      }).catch(() => {});
+    } else {
+      this.auditService.create({
+        username: email,
+        action: 'Forgot Password',
+        target: 'Auth',
+        details: `Password reset requested for unknown email ${email}`,
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
     }
 
     return {
@@ -118,7 +170,7 @@ export class AuthService {
     };
   }
 
-  async resetPassword(resetPasswordDto: ResetPasswordDto) {
+  async resetPassword(resetPasswordDto: ResetPasswordDto, meta?: { ip_address: string; user_agent: string }) {
     const { token, password, password_confirmation } = resetPasswordDto;
 
     if (password !== password_confirmation) {
@@ -130,6 +182,15 @@ export class AuthService {
     const user = await this.usersService.findByResetToken(token);
 
     if (!user) {
+      this.auditService.create({
+        username: 'unknown',
+        action: 'Reset Password Failed',
+        target: 'Auth',
+        details: 'Invalid reset token',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new BadRequestException('Token reset password tidak valid');
     }
 
@@ -137,6 +198,16 @@ export class AuthService {
       !user.reset_password_expires_at ||
       user.reset_password_expires_at < new Date()
     ) {
+      this.auditService.create({
+        user_id: user.id,
+        username: user.username,
+        action: 'Reset Password Failed',
+        target: 'Auth',
+        details: 'Expired reset token',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new BadRequestException('Token reset password sudah kedaluwarsa');
     }
 
@@ -145,6 +216,17 @@ export class AuthService {
       reset_password_token: null,
       reset_password_expires_at: null,
     });
+
+    this.auditService.create({
+      user_id: user.id,
+      username: user.username,
+      action: 'Reset Password',
+      target: 'Auth',
+      details: `Password reset for ${user.email}`,
+      ip_address: meta?.ip_address,
+      user_agent: meta?.user_agent,
+      status: 'success',
+    }).catch(() => {});
 
     return {
       success: true,
@@ -167,7 +249,7 @@ export class AuthService {
     });
   }
 
-  async setPassword(setPasswordDto: SetPasswordDto) {
+  async setPassword(setPasswordDto: SetPasswordDto, meta?: { ip_address: string; user_agent: string }) {
     const { token, password, password_confirmation } = setPasswordDto;
 
     if (password !== password_confirmation) {
@@ -179,6 +261,15 @@ export class AuthService {
     const user = await this.usersService.findBySetPasswordToken(token);
 
     if (!user) {
+      this.auditService.create({
+        username: 'unknown',
+        action: 'Set Password Failed',
+        target: 'Auth',
+        details: 'Invalid set password token',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new BadRequestException('Token tidak valid');
     }
 
@@ -186,6 +277,16 @@ export class AuthService {
       !user.set_password_expires_at ||
       user.set_password_expires_at < new Date()
     ) {
+      this.auditService.create({
+        user_id: user.id,
+        username: user.username,
+        action: 'Set Password Failed',
+        target: 'Auth',
+        details: 'Expired set password token',
+        ip_address: meta?.ip_address,
+        user_agent: meta?.user_agent,
+        status: 'failed',
+      }).catch(() => {});
       throw new BadRequestException('Token sudah kedaluwarsa');
     }
 
@@ -194,6 +295,17 @@ export class AuthService {
       set_password_token: null,
       set_password_expires_at: null,
     });
+
+    this.auditService.create({
+      user_id: user.id,
+      username: user.username,
+      action: 'Set Password',
+      target: 'Auth',
+      details: `Password set for ${user.email}`,
+      ip_address: meta?.ip_address,
+      user_agent: meta?.user_agent,
+      status: 'success',
+    }).catch(() => {});
 
     return {
       success: true,

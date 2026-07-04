@@ -3,32 +3,157 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
+import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
+import { RentalQueryDto } from './dto/rental-query.dto';
 
 @Injectable()
 export class RentalsService {
   constructor(
     @InjectRepository(Rental)
     private readonly rentalsRepository: Repository<Rental>,
+    @InjectRepository(Vehicle)
+    private readonly vehiclesRepository: Repository<Vehicle>,
   ) {}
 
-  async findAll(): Promise<{
-    success: boolean;
-    message: string;
-    data: Rental[];
-  }> {
-    const result = await this.rentalsRepository.find({
-      relations: { driver: true, vehicle: true },
-    });
+  async autoSetLateStatus(): Promise<number> {
+    const now = new Date();
+    const overdue = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .where('r.end_date < :now', { now })
+      .andWhere('r.payment_status IN (:...statuses)', { statuses: ['unpaid', 'partial'] })
+      .getMany();
+
+    for (const rental of overdue) {
+      rental.payment_status = 'late';
+    }
+    await this.rentalsRepository.save(overdue);
+
+    return overdue.length;
+  }
+
+  async findAll(query?: RentalQueryDto) {
+    await this.autoSetLateStatus();
+
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.rentalsRepository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.driver', 'driver')
+      .leftJoinAndSelect('r.vehicle', 'vehicle')
+      .orderBy('r.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.where(
+        '(r.rental_number ILIKE :search OR driver.first_name ILIKE :search OR driver.last_name ILIKE :search OR vehicle.license_plate ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [data, total] = await qb
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const totalPages = Math.ceil(total / limit);
+
     return {
       success: true,
       message: 'Rentals retrieved successfully',
-      data: result,
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
+  }
+
+  async findById(id: string) {
+    const rental = await this.rentalsRepository.findOne({
+      where: { id },
+      relations: { driver: true, vehicle: true },
+    });
+
+    if (!rental) {
+      throw new NotFoundException('Rental not found');
+    }
+
+    return {
+      success: true,
+      message: 'Rental retrieved successfully',
+      data: rental,
+    };
+  }
+
+  async findDetailById(id: string) {
+    const rental = await this.rentalsRepository.findOne({
+      where: { id },
+      relations: {
+        driver: true,
+        vehicle: true,
+        finances: { driver: true },
+        late_payments: true,
+      },
+    });
+
+    if (!rental) {
+      throw new NotFoundException('Rental not found');
+    }
+
+    return {
+      success: true,
+      message: 'Rental detail retrieved successfully',
+      data: rental,
+    };
+  }
+
+  async getSummary() {
+    const totalActive = await this.rentalsRepository.count();
+    const totalResult = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .select('COALESCE(SUM(r.total_revenue), 0)', 'total_revenue')
+      .addSelect('COALESCE(SUM(r.security_deposit), 0)', 'total_deposit')
+      .addSelect('COALESCE(SUM(r.service_fee), 0)', 'total_service_fee')
+      .addSelect('COALESCE(SUM(r.deposit_amount), 0)', 'total_deposit_amount')
+      .addSelect('COALESCE(AVG(r.daily_rate), 0)', 'avg_daily_rate')
+      .addSelect('COUNT(r.id)', 'total_rentals')
+      .getRawOne();
+
+    const byMethod = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .select('r.method_payment', 'method')
+      .addSelect('COALESCE(SUM(r.total_revenue), 0)', 'total')
+      .addSelect('COUNT(r.id)', 'count')
+      .groupBy('r.method_payment')
+      .getRawMany();
+
+    const amountByMethod: Record<string, number> = {};
+    for (const row of byMethod) {
+      amountByMethod[row.method] = Number(row.total);
+    }
+
+    return {
+      success: true,
+      message: 'Rental summary retrieved successfully',
+      data: {
+        total_rentals: Number(totalResult?.total_rentals || 0),
+        total_revenue: Number(totalResult?.total_revenue || 0),
+        total_deposit: Number(totalResult?.total_deposit || 0),
+        total_service_fee: Number(totalResult?.total_service_fee || 0),
+        total_deposit_amount: Number(totalResult?.total_deposit_amount || 0),
+        avg_daily_rate: Number(totalResult?.avg_daily_rate || 0),
+        amount_by_method: amountByMethod,
+      },
     };
   }
 
@@ -64,6 +189,8 @@ export class RentalsService {
 
       const rental = this.rentalsRepository.create(data);
       const result = await this.rentalsRepository.save(rental);
+
+      await this.vehiclesRepository.update(data.vehicle_id, { status: 'rented' });
 
       return {
         success: true,
@@ -168,6 +295,46 @@ export class RentalsService {
       }
       throw new InternalServerErrorException('Failed to update rental');
     }
+  }
+
+  async updatePaymentStatus(rentalId: string, paymentStatus: string) {
+    const validStatuses = ['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'];
+    if (!validStatuses.includes(paymentStatus)) {
+      throw new BadRequestException(`Invalid payment status. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    const rental = await this.rentalsRepository.findOne({ where: { id: rentalId }, relations: { vehicle: true } });
+    if (!rental) {
+      throw new NotFoundException('Rental not found');
+    }
+
+    const allowedTransitions: Record<string, string[]> = {
+      unpaid: ['paid', 'late', 'pending_confirmation', 'partial'],
+      late: ['paid', 'pending_confirmation'],
+      pending_confirmation: ['paid', 'late', 'unpaid'],
+      partial: ['paid'],
+      paid: [],
+    };
+
+    const allowed = allowedTransitions[rental.payment_status] || [];
+    if (!allowed.includes(paymentStatus)) {
+      throw new BadRequestException(
+        `Cannot change status from '${rental.payment_status}' to '${paymentStatus}'. Allowed: ${allowed.join(', ') || 'none'}`
+      );
+    }
+
+    rental.payment_status = paymentStatus;
+    await this.rentalsRepository.save(rental);
+
+    if (paymentStatus === 'paid' && rental.vehicle_id) {
+      await this.vehiclesRepository.update(rental.vehicle_id, { status: 'Available' });
+    }
+
+    return {
+      success: true,
+      message: 'Payment status updated successfully',
+      data: rental,
+    };
   }
 
   async delete(

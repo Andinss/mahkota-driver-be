@@ -5,29 +5,34 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { extractRequestMeta } from '../audit/audit.utils';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  login(@Body() loginDto: LoginDto, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    return this.authService.login(loginDto, meta);
   }
 
   @Post('forgot-password')
-  forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(forgotPasswordDto);
+  forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    return this.authService.forgotPassword(forgotPasswordDto, meta);
   }
 
   @Post('reset-password')
-  resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    return this.authService.resetPassword(resetPasswordDto);
+  resetPassword(@Body() resetPasswordDto: ResetPasswordDto, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    return this.authService.resetPassword(resetPasswordDto, meta);
   }
 
   @Post('set-password')
-  setPassword(@Body() setPasswordDto: SetPasswordDto) {
-    return this.authService.setPassword(setPasswordDto);
+  setPassword(@Body() setPasswordDto: SetPasswordDto, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    return this.authService.setPassword(setPasswordDto, meta);
   }
 
   @UseGuards(JwtAuthGuard)

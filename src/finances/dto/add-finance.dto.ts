@@ -5,6 +5,9 @@ import {
   IsOptional,
   IsNotEmpty,
   IsBoolean,
+  IsNumber,
+  IsUUID,
+  IsArray,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -21,9 +24,9 @@ export class AddFinanceDto {
   @IsNotEmpty()
   payment_method!: string;
 
-  @IsString()
+  @IsNumber()
   @IsNotEmpty()
-  amount_received!: string;
+  amount_received!: number;
 
   @IsOptional()
   @IsString()
@@ -32,6 +35,19 @@ export class AddFinanceDto {
   @IsString()
   @IsNotEmpty()
   payer!: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  driver_id!: string;
+
+  @IsOptional()
+  @IsEnum(['manual', 'rental', 'late_payment'])
+  finance_type?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  rental_ids?: string[];
 
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)

@@ -9,11 +9,14 @@ import {
   Delete,
   UploadedFiles,
   UseInterceptors,
+  Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverService } from './driver.service';
 import { UpdateDriverDto } from './dto/update-driver.dto';
+import { DriverQueryDto } from './dto/driver-query.dto';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
@@ -27,10 +30,29 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 @Controller('drivers')
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
+
   @Get()
   @Permissions('driver.read.all')
-  findAll() {
-    return this.driverService.findAll();
+  findAll(@Query() query: DriverQueryDto) {
+    return this.driverService.findAll(query);
+  }
+
+  @Get('summary')
+  @Permissions('driver.read.all')
+  getSummary() {
+    return this.driverService.getSummary();
+  }
+
+  @Get('detail/:id')
+  @Permissions('driver.read.all')
+  findDetail(@Param('id') id: string) {
+    return this.driverService.findDetailById(id);
+  }
+
+  @Get(':id')
+  @Permissions('driver.read.all')
+  findOne(@Param('id') id: string) {
+    return this.driverService.findById(id);
   }
 
   @Post('create')
@@ -39,10 +61,8 @@ export class DriverController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Tentukan direktori berdasarkan nama file
           let folder = 'image/driver';
 
-          // Perbaiki: cek file.originalname
           if (file.originalname.toLowerCase().includes('ktp')) {
             folder = 'image/driver/ktp';
           } else if (file.originalname.toLowerCase().includes('sim')) {
@@ -87,8 +107,8 @@ export class DriverController {
         }
       },
       limits: {
-        files: 5, // max 5 files total
-        fileSize: 5 * 1024 * 1024, // 5MB per file
+        files: 5,
+        fileSize: 5 * 1024 * 1024,
       },
     }),
   )
@@ -106,7 +126,6 @@ export class DriverController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          // Tentukan direktori berdasarkan nama file
           let folder = 'image/driver';
 
           if (file.originalname.toLowerCase().includes('ktp')) {
@@ -166,6 +185,7 @@ export class DriverController {
     const employeeId = req.params.employeeId;
     return this.driverService.update(employeeId, updateDriverDto, files);
   }
+
   @Delete('delete/:employeeId')
   @Permissions('driver.delete.all')
   delete(@Req() req: any) {

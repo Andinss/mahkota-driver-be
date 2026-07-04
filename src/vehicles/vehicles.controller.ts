@@ -9,6 +9,7 @@ import {
   UploadedFiles,
   UseInterceptors,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { extname } from 'path';
@@ -20,6 +21,7 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { VehiclesService } from './vehicles.service';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
+import { VehicleQueryDto } from './dto/vehicle-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -31,14 +33,26 @@ export class VehiclesController {
 
   @Get()
   @Permissions('vehicle.read')
-  findAll() {
-    return this.vehicleService.findAll();
+  findAll(@Query() query: VehicleQueryDto) {
+    return this.vehicleService.findAll(query);
   }
 
-   @Get('summary')
+  @Get('summary')
   @Permissions('vehicle.read')
-  async getSummary() {
+  getSummary() {
     return this.vehicleService.getSummary();
+  }
+
+  @Get('detail/:id')
+  @Permissions('vehicle.read')
+  findDetail(@Param('id') id: string) {
+    return this.vehicleService.findDetailById(id);
+  }
+
+  @Get(':id')
+  @Permissions('vehicle.read')
+  findOne(@Param('id') id: string) {
+    return this.vehicleService.findById(id);
   }
 
   @Post('create')
@@ -60,11 +74,8 @@ export class VehiclesController {
               .replace(/\s+/g, '-');
           }
 
-          // Buat nama folder: merk-model
           const vehicleFolder =
             merk && model ? `${merk}-${model}` : 'unknown-vehicle';
-
-          // Folder utama: image/vehicles/merk-model/
           const folder = `image/vehicles/${vehicleFolder}/`;
 
           if (!existsSync(folder)) {
@@ -77,7 +88,6 @@ export class VehiclesController {
           const uniqueSuffix =
             Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          // Ubah nama file menjadi vehicle-photo-uniqueid.ext
           callback(null, `vehicle-photo-${uniqueSuffix}${ext}`);
         },
       }),

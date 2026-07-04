@@ -5,11 +5,14 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  ManyToMany,
   JoinColumn,
   BeforeInsert,
 } from 'typeorm';
 import { Driver } from '../../drivers/entities/driver.entity';
 import { Vehicle } from '../../vehicles/entities/vehicle.entity';
+import { Finance } from '../../finances/entities/finance.entity';
+import { LatePayment } from '../../late-payments/entities/late-payment.entity';
 
 @Entity('rentals')
 export class Rental {
@@ -68,6 +71,19 @@ export class Rental {
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   total_revenue!: number;
+
+  @Column({
+    type: 'enum',
+    enum: ['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'],
+    default: 'unpaid',
+  })
+  payment_status!: string;
+
+  @ManyToMany(() => Finance, (finance) => finance.rentals)
+  finances!: Finance[];
+
+  @ManyToMany(() => LatePayment, (latePayment) => latePayment.rentals)
+  late_payments!: LatePayment[];
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at!: Date;

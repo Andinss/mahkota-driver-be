@@ -20,6 +20,20 @@ export class UsersService {
     private readonly configService: ConfigService,
   ) {}
 
+  async getSummary() {
+    const totalUsers = await this.usersRepository.count();
+    const activeUsers = await this.usersRepository.count({ where: { is_active: true } });
+
+    return {
+      success: true,
+      message: 'User summary retrieved successfully',
+      data: {
+        total_users: totalUsers,
+        active_users: activeUsers,
+      },
+    };
+  }
+
   async findAll(): Promise<{
     success: boolean;
     message: string;
