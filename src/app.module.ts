@@ -19,6 +19,7 @@ import { FieldOfficerModule } from './field-officer/field-officer.module';
 import { LatePaymentsModule } from './late-payments/late-payments.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { AuditModule } from './audit/audit.module';
     LatePaymentsModule,
     SettingsModule,
     AuditModule,
+    MonitoringModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [AppService, VehicleAssignmentService],
