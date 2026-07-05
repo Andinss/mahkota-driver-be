@@ -1,0 +1,269 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { GpsLocation } from './entities/gps-location.entity';
+import { Vehicle } from '../vehicles/entities/vehicle.entity';
+import { UpdateGpsDto } from './dto/update-gps.dto';
+import { GpsQueryDto } from './dto/gps-query.dto';
+
+export interface TaskItem {
+  id: string;
+  priority: 'High' | 'Normal';
+  vehicle_name: string;
+  plate: string;
+  location: string;
+  time_window: string;
+  status: 'Pending' | 'Scheduled' | 'In Progress' | 'Completed';
+}
+
+export interface TaskDetail {
+  id: string;
+  vehicle: {
+    name: string;
+    year: string;
+    transmission: string;
+    plateNumber: string;
+    imageUrl: string;
+    odometerOut: number;
+    fuelLevel: number;
+    type: string;
+  };
+  location: {
+    address: string;
+    mapUrl: string;
+    reportedIssue: string;
+  };
+  customer: {
+    name: string;
+    initials: string;
+    contractNumber: string;
+    phoneNumber: string;
+  };
+}
+
+@Injectable()
+export class MonitoringService {
+  constructor(
+    @InjectRepository(GpsLocation)
+    private readonly gpsRepository: Repository<GpsLocation>,
+    @InjectRepository(Vehicle)
+    private readonly vehicleRepository: Repository<Vehicle>,
+  ) {}
+
+  async getTasks() {
+    const vehicles = await this.vehicleRepository.find({
+      order: { created_at: 'DESC' },
+    });
+
+    const tasks: TaskItem[] = await Promise.all(
+      vehicles.map(async (v) => {
+        const latestGps = await this.gpsRepository.findOne({
+          where: { vehicle_id: v.id },
+          order: { recorded_at: 'DESC' },
+        });
+
+        return {
+          id: v.id,
+          priority: latestGps?.status === 'emergency' ? 'High' : 'Normal',
+          vehicle_name: `${v.merk} ${v.model}`,
+          plate: v.license_plate,
+          location: latestGps
+            ? `${Number(latestGps.latitude).toFixed(4)}, ${Number(latestGps.longitude).toFixed(4)}`
+            : 'No GPS data',
+          time_window: latestGps
+            ? new Date(latestGps.recorded_at).toLocaleString('id-ID')
+            : 'N/A',
+          status: latestGps
+            ? latestGps.status === 'emergency' ? 'Pending'
+              : latestGps.status === 'moving' ? 'In Progress'
+              : 'Scheduled'
+            : 'Scheduled',
+        };
+      }),
+    );
+
+    return {
+      success: true,
+      message: 'Tasks retrieved successfully',
+      data: tasks,
+    };
+  }
+
+  async getTaskById(id: string) {
+    const vehicle = await this.vehicleRepository.findOne({ where: { id } });
+    if (!vehicle) throw new NotFoundException('Task not found');
+
+    const location = await this.gpsRepository.findOne({
+      where: { vehicle_id: id },
+      order: { recorded_at: 'DESC' },
+    });
+
+    const task: TaskDetail = {
+      id: vehicle.id,
+      vehicle: {
+        name: `${vehicle.merk} ${vehicle.model}`,
+        year: vehicle.launching_year?.getFullYear().toString() || '',
+        transmission: 'Automatic',
+        plateNumber: vehicle.license_plate,
+        imageUrl: '',
+        odometerOut: 0,
+        fuelLevel: location?.fuel_level ?? 0,
+        type: 'Rental',
+      },
+      location: {
+        address: location
+          ? `${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`
+          : 'Unknown',
+        mapUrl: '',
+        reportedIssue: 'Vehicle requires retrieval',
+      },
+      customer: {
+        name: 'Unknown',
+        initials: '--',
+        contractNumber: '',
+        phoneNumber: '',
+      },
+    };
+
+    return {
+      success: true,
+      message: 'Task retrieved successfully',
+      data: task,
+    };
+  }
+
+  async getFleetLocations(query?: GpsQueryDto) {
+    const qb = this.gpsRepository
+      .createQueryBuilder('g')
+      .leftJoinAndSelect('g.vehicle', 'vehicle')
+      .orderBy('g.recorded_at', 'DESC');
+
+    if (query?.status) {
+      qb.andWhere('g.status = :status', { status: query.status });
+    }
+
+    const allLocations = await qb.getMany();
+
+    const latestPerVehicle = new Map<string, GpsLocation>();
+    for (const loc of allLocations) {
+      if (!latestPerVehicle.has(loc.vehicle_id)) {
+        latestPerVehicle.set(loc.vehicle_id, loc);
+      }
+    }
+
+    const fleet = Array.from(latestPerVehicle.values()).map((loc) => ({
+      id: loc.id,
+      vehicle_id: loc.vehicle_id,
+      plate: loc.vehicle?.license_plate || '',
+      vehicle_name: loc.vehicle
+        ? `${loc.vehicle.merk} ${loc.vehicle.model}`
+        : '',
+      latitude: Number(loc.latitude),
+      longitude: Number(loc.longitude),
+      speed: Number(loc.speed),
+      fuel_level: loc.fuel_level !== null ? Number(loc.fuel_level) : null,
+      status: loc.status,
+      last_updated: loc.recorded_at,
+    }));
+
+    if (query?.vehicle_id) {
+      const filtered = fleet.filter(
+        (v) => v.vehicle_id === query.vehicle_id,
+      );
+      return {
+        success: true,
+        message: 'Fleet locations retrieved successfully',
+        data: filtered,
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Fleet locations retrieved successfully',
+      data: fleet,
+    };
+  }
+
+  async getVehicleLocation(vehicleId: string) {
+    const location = await this.gpsRepository.findOne({
+      where: { vehicle_id: vehicleId },
+      order: { recorded_at: 'DESC' },
+      relations: { vehicle: true },
+    });
+
+    if (!location) {
+      throw new NotFoundException('Vehicle location not found');
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle location retrieved successfully',
+      data: {
+        id: location.id,
+        vehicle_id: location.vehicle_id,
+        plate: location.vehicle?.license_plate || '',
+        vehicle_name: location.vehicle
+          ? `${location.vehicle.merk} ${location.vehicle.model}`
+          : '',
+        latitude: Number(location.latitude),
+        longitude: Number(location.longitude),
+        speed: Number(location.speed),
+        fuel_level: location.fuel_level !== null
+          ? Number(location.fuel_level)
+          : null,
+        status: location.status,
+        last_updated: location.recorded_at,
+      },
+    };
+  }
+
+  async getLocationHistory(vehicleId: string, limit = 50) {
+    const locations = await this.gpsRepository.find({
+      where: { vehicle_id: vehicleId },
+      order: { recorded_at: 'DESC' },
+      take: limit,
+      relations: { vehicle: true },
+    });
+
+    return {
+      success: true,
+      message: 'Location history retrieved successfully',
+      data: locations.map((loc) => ({
+        id: loc.id,
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
+        speed: Number(loc.speed),
+        fuel_level: loc.fuel_level !== null ? Number(loc.fuel_level) : null,
+        status: loc.status,
+        recorded_at: loc.recorded_at,
+      })),
+    };
+  }
+
+  async updateLocation(dto: UpdateGpsDto) {
+    const location = new GpsLocation();
+    location.vehicle_id = dto.vehicle_id;
+    location.latitude = dto.latitude;
+    location.longitude = dto.longitude;
+    location.speed = dto.speed ?? 0;
+    location.fuel_level = dto.fuel_level ?? null;
+    location.status = dto.status ?? 'idle';
+
+    const saved = await this.gpsRepository.save(location);
+
+    return {
+      success: true,
+      message: 'GPS location updated successfully',
+      data: {
+        id: saved.id,
+        vehicle_id: saved.vehicle_id,
+        latitude: Number(saved.latitude),
+        longitude: Number(saved.longitude),
+        speed: Number(saved.speed),
+        fuel_level: saved.fuel_level !== null ? Number(saved.fuel_level) : null,
+        status: saved.status,
+        recorded_at: saved.recorded_at,
+      },
+    };
+  }
+}

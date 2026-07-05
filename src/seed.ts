@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { User } from './users/entities/user.entity';
 import { Role } from './roles/entities/role.entity';
 import { Permission } from './permissions/entities/permission.entity';
+import { Vehicle } from './vehicles/entities/vehicle.entity';
+import { GpsLocation } from './monitoring/entities/gps-location.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -16,7 +18,7 @@ const modulePermissions: Record<string, string[]> = {
   rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
   finance: ['create', 'read', 'update', 'delete', 'approve'],
   late_payment: ['read', 'approve'],
-  monitoring: ['read'],
+  monitoring: ['read', 'read.all', 'update'],
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
 };
@@ -69,6 +71,8 @@ const rolesData: RoleSeed[] = [
         'vehicle.read',
         'rental.read',
         'monitoring.read',
+        'monitoring.read.all',
+        'monitoring.update',
       ];
       return perms.includes(name);
     },
@@ -195,6 +199,58 @@ async function seed() {
     }
   } else {
     console.log('Admin user already exists');
+  }
+
+  // Seed monitoring dummy data
+  const vehicleRepository = app.get<Repository<Vehicle>>(getRepositoryToken(Vehicle));
+  const gpsRepository = app.get<Repository<GpsLocation>>(getRepositoryToken(GpsLocation));
+
+  const dummyVehicles = [
+    {
+      merk: 'Toyota', model: 'Avanza',
+      launching_year: new Date('2022-01-01'),
+      license_plate: 'B 1234 ABC',
+      vin_number: 'MHFX1234567890123',
+      color: 'Silver', status: 'Available',
+      engine_number: 'EN-TOYOTA-001',
+      daily_rate: 350000,
+    },
+    {
+      merk: 'Honda', model: 'Brio',
+      launching_year: new Date('2023-01-01'),
+      license_plate: 'B 5678 DEF',
+      vin_number: 'MHFX9876543210987',
+      color: 'Red', status: 'Available',
+      engine_number: 'EN-HONDA-001',
+      daily_rate: 300000,
+    },
+  ];
+
+  const dummyGpsLocations = [
+    { latitude: -6.2088, longitude: 106.8456, speed: 45, fuel_level: 72, status: 'moving' },
+    { latitude: -6.175, longitude: 106.827, speed: 0, fuel_level: 30, status: 'idle' },
+  ];
+
+  for (let i = 0; i < dummyVehicles.length; i++) {
+    const v = dummyVehicles[i];
+    let vehicle = await vehicleRepository.findOne({ where: { license_plate: v.license_plate } });
+    if (!vehicle) {
+      vehicle = vehicleRepository.create(v);
+      vehicle = await vehicleRepository.save(vehicle);
+      console.log(`Created vehicle: ${v.license_plate}`);
+    } else {
+      console.log(`Vehicle already exists: ${v.license_plate}`);
+    }
+    const gps = gpsRepository.create({
+      vehicle_id: vehicle.id,
+      latitude: dummyGpsLocations[i].latitude,
+      longitude: dummyGpsLocations[i].longitude,
+      speed: dummyGpsLocations[i].speed,
+      fuel_level: dummyGpsLocations[i].fuel_level,
+      status: dummyGpsLocations[i].status,
+    });
+    await gpsRepository.save(gps);
+    console.log(`GPS location saved for ${v.license_plate}`);
   }
 
   await app.close();
