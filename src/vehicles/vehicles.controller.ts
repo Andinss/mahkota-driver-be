@@ -6,6 +6,7 @@ import {
   Body,
   Put,
   Delete,
+  StreamableFile,
   UploadedFiles,
   UseInterceptors,
   Param,
@@ -22,6 +23,7 @@ import { VehiclesService } from './vehicles.service';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { VehicleQueryDto } from './dto/vehicle-query.dto';
+import { VehicleExportDto } from './dto/vehicle-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -35,6 +37,19 @@ export class VehiclesController {
   @Permissions('vehicle.read')
   findAll(@Query() query: VehicleQueryDto) {
     return this.vehicleService.findAll(query);
+  }
+
+  @Get('export')
+  @Permissions('vehicle.read')
+  async export(@Query() query: VehicleExportDto) {
+    const result = await this.vehicleService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get('summary')

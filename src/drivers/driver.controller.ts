@@ -7,6 +7,7 @@ import {
   Req,
   Put,
   Delete,
+  StreamableFile,
   UploadedFiles,
   UseInterceptors,
   Param,
@@ -17,6 +18,7 @@ import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverService } from './driver.service';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
+import { DriverExportDto } from './dto/driver-export.dto';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
@@ -41,6 +43,19 @@ export class DriverController {
   @Permissions('driver.read.all')
   getSummary() {
     return this.driverService.getSummary();
+  }
+
+  @Get('export')
+  @Permissions('driver.read.all')
+  async export(@Query() query: DriverExportDto) {
+    const result = await this.driverService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get('detail/:id')

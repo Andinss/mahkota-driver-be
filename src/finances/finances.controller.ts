@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Get,
@@ -6,6 +7,7 @@ import {
   Req,
   Put,
   Delete,
+  StreamableFile,
   Param,
   Query,
   UseGuards,
@@ -14,6 +16,7 @@ import {
 import { FinancesService } from './finances.service';
 import { AddFinanceDto } from './dto/add-finance.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
+import { FinanceExportDto } from './dto/finance-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -32,6 +35,19 @@ export class FinancesController {
   @Permissions('finance.read')
   findAll(@Query() query: FinanceQueryDto) {
     return this.financesService.findAll(query);
+  }
+
+  @Get('export')
+  @Permissions('finance.read')
+  async export(@Query() query: FinanceExportDto) {
+    const result = await this.financesService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get('summary')

@@ -9,6 +9,9 @@ import { Repository } from 'typeorm';
 import { Vehicle } from './entities/vehicle.entity';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
 import { VehicleQueryDto } from './dto/vehicle-query.dto';
+import { VehicleExportDto } from './dto/vehicle-export.dto';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
 export class VehiclesService {
@@ -244,6 +247,175 @@ export class VehiclesService {
       }
       throw new InternalServerErrorException('Failed to update vehicle');
     }
+  }
+
+  async exportData(query: VehicleExportDto) {
+    const format = query.format || 'csv';
+    const selectedColumns = query.columns
+      ? query.columns.split(',')
+      : ['name', 'year', 'licensePlate', 'dailyRate', 'status'];
+
+    const qb = this.vehiclesRepository
+      .createQueryBuilder('v');
+
+    if (query.search) {
+      qb.where(
+        '(v.merk ILIKE :search OR v.model ILIKE :search OR v.license_plate ILIKE :search OR v.vin_number ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query.start_date) {
+      qb.andWhere('v.created_at >= :start', { start: query.start_date });
+    }
+
+    if (query.end_date) {
+      qb.andWhere('v.created_at <= :end', { end: query.end_date });
+    }
+
+    const vehicles = await qb.orderBy('v.created_at', 'DESC').getMany();
+
+    const columnMap: Record<string, (v: Vehicle) => string> = {
+      name: (v) => `${v.merk} ${v.model}`.trim() || '-',
+      year: (v) => v.launching_year ? new Date(v.launching_year).getFullYear().toString() : '-',
+      licensePlate: (v) => v.license_plate || '-',
+      dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
+      status: (v) => v.status || '-',
+      color: (v) => v.color || '-',
+      vinNumber: (v) => v.vin_number || '-',
+      engineNumber: (v) => v.engine_number || '-',
+      id: (v) => v.id || '-',
+    };
+
+    const headerLabels: Record<string, string> = {
+      name: 'Car Name',
+      year: 'Year',
+      licensePlate: 'License Plate',
+      dailyRate: 'Daily Rate',
+      status: 'Status',
+      color: 'Color',
+      vinNumber: 'VIN Number',
+      engineNumber: 'Engine Number',
+      id: 'Vehicle ID',
+    };
+
+    const activeColumns = selectedColumns.filter((c) => columnMap[c]);
+
+    const rows = vehicles.map((vehicle) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](vehicle) || '';
+      }
+      return row;
+    });
+
+    if (format === 'csv') {
+      return this.generateCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generatePdf(rows, activeColumns, headerLabels);
+    }
+  }
+
+  private generateCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `vehicles_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Vehicles');
+
+    const xlsxColumns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 25,
+    }));
+    worksheet.columns = xlsxColumns;
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult as ArrayBuffer);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `vehicles_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generatePdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const docDefinition: any = {
+      content: [
+        { text: 'Vehicle Export Report', style: 'header' },
+        {
+          table: {
+            headerRows: 1,
+            widths: columns.map(() => '*'),
+            body: tableBody,
+          },
+          layout: 'headerLineOnly',
+        },
+      ],
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `vehicles_export_${Date.now()}.pdf`,
+    };
   }
 
   async delete(
