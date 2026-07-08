@@ -8,6 +8,7 @@ import {
   Put,
   Patch,
   Delete,
+  StreamableFile,
   UploadedFiles,
   UseInterceptors,
   Param,
@@ -23,6 +24,7 @@ import { RentalsService } from './rentals.service';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 import { RentalQueryDto } from './dto/rental-query.dto';
+import { RentalExportDto } from './dto/rental-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -36,6 +38,19 @@ export class RentalsController {
   @Permissions('rental.read')
   findAll(@Query() query: RentalQueryDto) {
     return this.rentalService.findAll(query);
+  }
+
+  @Get('export')
+  @Permissions('rental.read')
+  async export(@Query() query: RentalExportDto) {
+    const result = await this.rentalService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get('auto-set-late')

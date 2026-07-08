@@ -12,6 +12,9 @@ import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { RentalQueryDto } from './dto/rental-query.dto';
+import { RentalExportDto } from './dto/rental-export.dto';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
 export class RentalsService {
@@ -334,6 +337,189 @@ export class RentalsService {
       success: true,
       message: 'Payment status updated successfully',
       data: rental,
+    };
+  }
+
+  async exportData(query: RentalExportDto) {
+    const format = query.format || 'csv';
+    const selectedColumns = query.columns
+      ? query.columns.split(',')
+      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration', 'deposit', 'paymentStatus'];
+
+    const qb = this.rentalsRepository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.driver', 'driver')
+      .leftJoinAndSelect('r.vehicle', 'vehicle');
+
+    if (query.search) {
+      qb.where(
+        '(r.rental_number ILIKE :search OR driver.first_name ILIKE :search OR driver.last_name ILIKE :search OR vehicle.license_plate ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query.start_date) {
+      qb.andWhere('r.created_at >= :start', { start: query.start_date });
+    }
+
+    if (query.end_date) {
+      qb.andWhere('r.created_at <= :end', { end: query.end_date });
+    }
+
+    const rentals = await qb.orderBy('r.created_at', 'DESC').getMany();
+
+    const columnMap: Record<string, (r: Rental) => string> = {
+      transactionId: (r) => r.rental_number || '-',
+      driverName: (r) => [r.driver?.first_name, r.driver?.last_name].filter(Boolean).join(' ') || '-',
+      driverId: (r) => r.driver?.employee_id || r.driver_id?.slice(0, 8) || '-',
+      vehicleName: (r) => [r.vehicle?.merk, r.vehicle?.model].filter(Boolean).join(' ') || '-',
+      vehiclePlate: (r) => r.vehicle?.license_plate || '-',
+      rentalPeriod: (r) => `${r.start_date} to ${r.end_date}`,
+      duration: (r) => String(r.total_duration) || '-',
+      deposit: (r) => `Rp ${Number(r.deposit_amount).toLocaleString('id-ID')}`,
+      paymentStatus: (r) => r.payment_status || '-',
+      dailyRate: (r) => `Rp ${Number(r.daily_rate).toLocaleString('id-ID')}`,
+      totalDailyRate: (r) => `Rp ${Number(r.total_daily_rate).toLocaleString('id-ID')}`,
+      securityDeposit: (r) => `Rp ${Number(r.security_deposit).toLocaleString('id-ID')}`,
+      serviceFee: (r) => `Rp ${Number(r.service_fee).toLocaleString('id-ID')}`,
+      totalRevenue: (r) => `Rp ${Number(r.total_revenue).toLocaleString('id-ID')}`,
+      methodPayment: (r) => r.method_payment || '-',
+    };
+
+    const headerLabels: Record<string, string> = {
+      transactionId: 'Transaction ID',
+      driverName: 'Driver Name',
+      driverId: 'Driver ID',
+      vehicleName: 'Vehicle Name',
+      vehiclePlate: 'Vehicle Plate',
+      rentalPeriod: 'Rental Period',
+      duration: 'Duration (Days)',
+      deposit: 'Deposit',
+      paymentStatus: 'Payment Status',
+      dailyRate: 'Daily Rate',
+      totalDailyRate: 'Total Daily Rate',
+      securityDeposit: 'Security Deposit',
+      serviceFee: 'Service Fee',
+      totalRevenue: 'Total Revenue',
+      methodPayment: 'Payment Method',
+    };
+
+    const activeColumns = selectedColumns.filter((c) => columnMap[c]);
+
+    const rows = rentals.map((rental) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](rental) || '';
+      }
+      return row;
+    });
+
+    if (format === 'csv') {
+      return this.generateCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generatePdf(rows, activeColumns, headerLabels);
+    }
+  }
+
+  private generateCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `rentals_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Rentals');
+
+    const xlsxColumns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 25,
+    }));
+    worksheet.columns = xlsxColumns;
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult as ArrayBuffer);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `rentals_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generatePdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const docDefinition: any = {
+      content: [
+        { text: 'Rental Export Report', style: 'header' },
+        {
+          table: {
+            headerRows: 1,
+            widths: columns.map(() => '*'),
+            body: tableBody,
+          },
+          layout: 'headerLineOnly',
+        },
+      ],
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `rentals_export_${Date.now()}.pdf`,
     };
   }
 

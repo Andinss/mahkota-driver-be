@@ -1,6 +1,7 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, ParseUUIDPipe, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { QueryAuditDto } from './dto/query-audit.dto';
+import { AuditExportDto } from './dto/audit-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -14,6 +15,19 @@ export class AuditController {
   @Permissions('audit.read')
   findAll(@Query() query: QueryAuditDto) {
     return this.auditService.findAll(query);
+  }
+
+  @Get('export')
+  @Permissions('audit.read')
+  async export(@Query() query: AuditExportDto) {
+    const result = await this.auditService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get('stats')

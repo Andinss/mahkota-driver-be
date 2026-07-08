@@ -8,7 +8,10 @@ import { Repository } from 'typeorm';
 import { Finance } from './entities/finance.entity';
 import { AddFinanceDto } from './dto/add-finance.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
+import { FinanceExportDto } from './dto/finance-export.dto';
 import { RentalsService } from '../rentals/rentals.service';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
 export class FinancesService {
@@ -267,6 +270,183 @@ export class FinancesService {
       success: true,
       message: 'Finance updated successfully',
       data: finance,
+    };
+  }
+
+  async exportData(query: FinanceExportDto) {
+    const format = query.format || 'csv';
+    const selectedColumns = query.columns
+      ? query.columns.split(',')
+      : ['reference_number', 'payer', 'amount_received', 'payment_date', 'status', 'payment_method', 'finance_type'];
+
+    const qb = this.financesRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.driver', 'driver')
+      .leftJoinAndSelect('f.rentals', 'rentals');
+
+    if (query.search) {
+      qb.andWhere(
+        '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query.start_date) {
+      qb.andWhere('f.payment_date >= :startDate', {
+        startDate: query.start_date,
+      });
+    }
+
+    if (query.end_date) {
+      qb.andWhere('f.payment_date <= :endDate', {
+        endDate: query.end_date,
+      });
+    }
+
+    const finances = await qb.orderBy('f.created_at', 'DESC').getMany();
+
+    const columnMap: Record<string, (f: Finance) => string> = {
+      reference_number: (f) => f.reference_number || '-',
+      payer: (f) => f.payer || '-',
+      amount_received: (f) => `Rp ${Number(f.amount_received).toLocaleString('id-ID')}`,
+      payment_date: (f) => f.payment_date ? new Date(f.payment_date).toLocaleDateString('id-ID') : '-',
+      status: (f) => f.is_active ? 'Active' : 'Inactive',
+      payment_method: (f) => f.payment_method || '-',
+      finance_type: (f) => f.finance_type || '-',
+      driverName: (f) => f.driver ? `${f.driver.first_name} ${f.driver.last_name}`.trim() : '-',
+      notes: (f) => f.notes || '-',
+      id: (f) => f.id || '-',
+    };
+
+    const headerLabels: Record<string, string> = {
+      reference_number: 'Reference Number',
+      payer: 'Payer',
+      amount_received: 'Amount Received',
+      payment_date: 'Payment Date',
+      status: 'Status',
+      payment_method: 'Payment Method',
+      finance_type: 'Finance Type',
+      driverName: 'Driver Name',
+      notes: 'Notes',
+      id: 'Finance ID',
+    };
+
+    const activeColumns = selectedColumns.filter((c) => columnMap[c]);
+
+    const rows = finances.map((finance) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](finance) || '';
+      }
+      return row;
+    });
+
+    if (format === 'csv') {
+      return this.generateCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generatePdf(rows, activeColumns, headerLabels);
+    }
+  }
+
+  private generateCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `finances_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Finances');
+
+    const xlsxColumns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 25,
+    }));
+    worksheet.columns = xlsxColumns;
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult as ArrayBuffer);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `finances_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generatePdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const docDefinition: any = {
+      content: [
+        { text: 'Finance Export Report', style: 'header' },
+        {
+          table: {
+            headerRows: 1,
+            widths: columns.map(() => '*'),
+            body: tableBody,
+          },
+          layout: 'headerLineOnly',
+        },
+      ],
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `finances_export_${Date.now()}.pdf`,
     };
   }
 

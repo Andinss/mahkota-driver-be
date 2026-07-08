@@ -9,10 +9,14 @@ import {
   Delete,
   Param,
   NotFoundException,
+  BadRequestException,
+  StreamableFile,
+  Query,
 } from '@nestjs/common';
 
 import { UsersService } from './users.service';
 import { AddUserDto } from './dto/add-user.dto';
+import { UserExportDto } from './dto/user-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -37,6 +41,19 @@ export class UsersController {
   @Permissions('user.read')
   getSummary() {
     return this.usersService.getSummary();
+  }
+
+  @Get('export')
+  @Permissions('user.read')
+  async export(@Query() query: UserExportDto) {
+    const result = await this.usersService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get(':id')

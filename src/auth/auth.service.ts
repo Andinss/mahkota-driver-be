@@ -173,6 +173,21 @@ export class AuthService {
   async resetPassword(resetPasswordDto: ResetPasswordDto, meta?: { ip_address: string; user_agent: string }) {
     const { token, password, password_confirmation } = resetPasswordDto;
 
+    // If password not provided, this is a verification request
+    if (!password) {
+      const user = await this.usersService.findByResetToken(token);
+
+      if (
+        !user ||
+        !user.reset_password_expires_at ||
+        user.reset_password_expires_at < new Date()
+      ) {
+        return { valid: false };
+      }
+
+      return { valid: true };
+    }
+
     if (password !== password_confirmation) {
       throw new BadRequestException(
         'Password dan konfirmasi password tidak cocok',
@@ -213,8 +228,7 @@ export class AuthService {
 
     await this.usersService.update(user.id, {
       password,
-      reset_password_token: null,
-      reset_password_expires_at: null,
+      reset_password_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000),
     });
 
     this.auditService.create({
@@ -251,6 +265,22 @@ export class AuthService {
 
   async setPassword(setPasswordDto: SetPasswordDto, meta?: { ip_address: string; user_agent: string }) {
     const { token, password, password_confirmation } = setPasswordDto;
+
+    // If password not provided, this is a verification request
+    if (!password) {
+      const user = await this.usersService.findBySetPasswordToken(token);
+
+      if (
+        !user ||
+        !user.set_password_expires_at ||
+        user.set_password_expires_at < new Date() ||
+        user.password !== null
+      ) {
+        return { valid: false };
+      }
+
+      return { valid: true };
+    }
 
     if (password !== password_confirmation) {
       throw new BadRequestException(
@@ -292,8 +322,7 @@ export class AuthService {
 
     await this.usersService.update(user.id, {
       password,
-      set_password_token: null,
-      set_password_expires_at: null,
+      set_password_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000),
     });
 
     this.auditService.create({
@@ -311,6 +340,35 @@ export class AuthService {
       success: true,
       message: 'Password berhasil dibuat. Silakan login.',
     };
+  }
+
+  async verifyResetToken(token: string) {
+    const user = await this.usersService.findByResetToken(token);
+
+    if (
+      !user ||
+      !user.reset_password_expires_at ||
+      user.reset_password_expires_at < new Date()
+    ) {
+      return { valid: false };
+    }
+
+    return { valid: true };
+  }
+
+  async verifySetToken(token: string) {
+    const user = await this.usersService.findBySetPasswordToken(token);
+
+    if (
+      !user ||
+      !user.set_password_expires_at ||
+      user.set_password_expires_at < new Date() ||
+      user.password !== null
+    ) {
+      return { valid: false };
+    }
+
+    return { valid: true };
   }
 
   async getProfile(user: User) {

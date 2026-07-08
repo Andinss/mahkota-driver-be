@@ -1,16 +1,16 @@
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class SetPasswordDto {
   @IsString()
   @IsNotEmpty()
   token!: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MinLength(8)
-  password!: string;
+  password?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  password_confirmation!: string;
+  password_confirmation?: string;
 }
