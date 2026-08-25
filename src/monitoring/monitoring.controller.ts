@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Param,
   Query,
@@ -64,5 +65,15 @@ export class MonitoringController {
   @Permissions('monitoring.read')
   getTaskById(@Param('id') id: string) {
     return this.monitoringService.getTaskById(id);
+  }
+
+  @Put('vehicles/:id/status')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions('monitoring.update')
+  updateVehicleStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+  ) {
+    return this.monitoringService.updateVehicleStatus(id, status);
   }
 }
