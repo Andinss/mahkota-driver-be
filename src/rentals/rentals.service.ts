@@ -6,10 +6,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
+import { Driver } from '../drivers/entities/driver.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { RentalQueryDto } from './dto/rental-query.dto';
 import { RentalExportDto } from './dto/rental-export.dto';
@@ -23,6 +24,9 @@ export class RentalsService {
     private readonly rentalsRepository: Repository<Rental>,
     @InjectRepository(Vehicle)
     private readonly vehiclesRepository: Repository<Vehicle>,
+    @InjectRepository(Driver)
+    private readonly driversRepository: Repository<Driver>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async autoSetLateStatus(): Promise<number> {
@@ -175,7 +179,21 @@ export class RentalsService {
   }
 
   async create(data: AddRentalDto, files?: Express.Multer.File[]) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
+      const driver = await this.driversRepository.findOne({ where: { id: data.driver_id } });
+      if (!driver) {
+        throw new NotFoundException(`Driver with id ${data.driver_id} not found`);
+      }
+
+      const vehicle = await this.vehiclesRepository.findOne({ where: { id: data.vehicle_id } });
+      if (!vehicle) {
+        throw new NotFoundException(`Vehicle with id ${data.vehicle_id} not found`);
+      }
+
       if (files && files.length > 0) {
         for (const file of files) {
           const originalName = file.originalname.toLowerCase();
@@ -191,9 +209,11 @@ export class RentalsService {
       }
 
       const rental = this.rentalsRepository.create(data);
-      const result = await this.rentalsRepository.save(rental);
+      const result = await queryRunner.manager.save(rental);
 
-      await this.vehiclesRepository.update(data.vehicle_id, { status: 'rented' });
+      await queryRunner.manager.update(Vehicle, data.vehicle_id, { status: 'rented' });
+
+      await queryRunner.commitTransaction();
 
       return {
         success: true,
@@ -201,6 +221,7 @@ export class RentalsService {
         data: result,
       };
     } catch (error) {
+      await queryRunner.rollbackTransaction();
       console.error('Failed to create rental:', error);
       if (files && files.length > 0) {
         for (const file of files) {
@@ -209,7 +230,12 @@ export class RentalsService {
           } catch {}
         }
       }
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       throw new InternalServerErrorException('Failed to create rental');
+    } finally {
+      await queryRunner.release();
     }
   }
 
