@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GpsLocation } from './entities/gps-location.entity';
@@ -264,6 +264,28 @@ export class MonitoringService {
         status: saved.status,
         recorded_at: saved.recorded_at,
       },
+    };
+  }
+
+  async updateVehicleStatus(vehicleId: string, status: string) {
+    const allowedStatuses = ['Available', 'Maintenance', 'Service', 'Reserved', 'rented', 'retrieved'];
+    if (!allowedStatuses.includes(status)) {
+      throw new BadRequestException(`Invalid status. Must be one of: ${allowedStatuses.join(', ')}`);
+    }
+
+    const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    await this.vehicleRepository.update(vehicleId, { status });
+
+    const updated = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
+
+    return {
+      success: true,
+      message: `Vehicle status updated to ${status}`,
+      data: updated,
     };
   }
 }

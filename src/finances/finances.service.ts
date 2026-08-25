@@ -2,10 +2,13 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Finance } from './entities/finance.entity';
+import { Rental } from '../rentals/entities/rental.entity';
+import { Driver } from '../drivers/entities/driver.entity';
 import { AddFinanceDto } from './dto/add-finance.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceExportDto } from './dto/finance-export.dto';
@@ -18,6 +21,10 @@ export class FinancesService {
   constructor(
     @InjectRepository(Finance)
     private readonly financesRepository: Repository<Finance>,
+    @InjectRepository(Rental)
+    private readonly rentalsRepository: Repository<Rental>,
+    @InjectRepository(Driver)
+    private readonly driversRepository: Repository<Driver>,
     private readonly rentalsService: RentalsService,
   ) {}
 
@@ -189,6 +196,20 @@ export class FinancesService {
     try {
       const { rental_ids, ...financeData } = data;
 
+      const driver = await this.driversRepository.findOne({ where: { id: data.driver_id } });
+      if (!driver) {
+        throw new NotFoundException(`Driver with id ${data.driver_id} not found`);
+      }
+
+      if (rental_ids && rental_ids.length > 0) {
+        const foundRentals = await this.rentalsRepository.find({ where: { id: In(rental_ids) } });
+        if (foundRentals.length !== rental_ids.length) {
+          const foundIds = foundRentals.map((r) => r.id);
+          const missingIds = rental_ids.filter((id) => !foundIds.includes(id));
+          throw new NotFoundException(`Rentals not found: ${missingIds.join(', ')}`);
+        }
+      }
+
       const finance = this.financesRepository.create({
         ...financeData,
         payment_date: new Date(data.payment_date),
@@ -214,6 +235,9 @@ export class FinancesService {
       };
     } catch (error) {
       console.error('Failed to create finance:', error);
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
       throw new InternalServerErrorException('Failed to create finance');
     }
   }
@@ -242,6 +266,13 @@ export class FinancesService {
   }
 
   async update(id: string, data: Partial<AddFinanceDto>) {
+    const existingFinance = await this.findRawById(id);
+    if (!existingFinance) {
+      throw new NotFoundException('Finance not found');
+    }
+
+    const oldRentalIds = existingFinance.rentals?.map((r) => r.id) || [];
+
     const { rental_ids, ...updateData } = data;
 
     const updatePayload: any = {
@@ -257,11 +288,24 @@ export class FinancesService {
     }
 
     if (rental_ids !== undefined) {
+      if (rental_ids.length > 0) {
+        const foundRentals = await this.rentalsRepository.find({ where: { id: In(rental_ids) } });
+        if (foundRentals.length !== rental_ids.length) {
+          const foundIds = foundRentals.map((r) => r.id);
+          const missingIds = rental_ids.filter((rid) => !foundIds.includes(rid));
+          throw new NotFoundException(`Rentals not found: ${missingIds.join(', ')}`);
+        }
+      }
       const finance = await this.financesRepository.findOne({ where: { id } });
       if (finance) {
         finance.rentals = rental_ids.map((rid) => ({ id: rid } as any));
         await this.financesRepository.save(finance);
       }
+    }
+
+    const allRentalIdsToRecalc = new Set([...oldRentalIds, ...(rental_ids || [])]);
+    for (const rentalId of allRentalIdsToRecalc) {
+      await this.updateRentalPaymentStatus(rentalId);
     }
 
     const finance = await this.findRawById(id);
@@ -451,9 +495,17 @@ export class FinancesService {
   }
 
   async delete(employid: string): Promise<{ success: boolean; message: string }> {
-    const result = await this.financesRepository.delete(employid);
-    if (result.affected === 0) {
+    const finance = await this.findRawById(employid);
+    if (!finance) {
       throw new NotFoundException('Finance not found');
+    }
+
+    const linkedRentalIds = finance.rentals?.map((r) => r.id) || [];
+
+    await this.financesRepository.delete(employid);
+
+    for (const rentalId of linkedRentalIds) {
+      await this.updateRentalPaymentStatus(rentalId);
     }
 
     return {
