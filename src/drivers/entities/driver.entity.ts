@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToOne,
   JoinColumn,
 } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
+import { DriverSaldo } from '../../saldo/entities/driver-saldo.entity';
 
 @Entity('drivers')
 export class Driver {
@@ -77,6 +79,12 @@ export class Driver {
   @ManyToOne(() => User, (user) => user.drivers)
   @JoinColumn({ name: 'created_by_id' })
   created_by!: User;
+
+  @Column({ type: 'boolean', default: true })
+  is_active!: boolean;
+
+  @OneToOne(() => DriverSaldo, (saldo) => saldo.driver)
+  saldo!: DriverSaldo;
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

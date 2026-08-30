@@ -16,6 +16,7 @@ import {
 
 import { UsersService } from './users.service';
 import { AddUserDto } from './dto/add-user.dto';
+import { UserQueryDto } from './dto/user-query.dto';
 import { UserExportDto } from './dto/user-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
@@ -33,8 +34,8 @@ export class UsersController {
 
   @Get()
   @Permissions('user.read')
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Query() query: UserQueryDto) {
+    return this.usersService.findAll(query);
   }
 
   @Get('summary')

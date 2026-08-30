@@ -163,6 +163,7 @@ export class MonitoringService {
       speed: Number(loc.speed),
       fuel_level: loc.fuel_level !== null ? Number(loc.fuel_level) : null,
       status: loc.status,
+      engine_status: loc.engine_status || 'off',
       last_updated: loc.recorded_at,
     }));
 
@@ -212,6 +213,7 @@ export class MonitoringService {
           ? Number(location.fuel_level)
           : null,
         status: location.status,
+        engine_status: location.engine_status || 'off',
         last_updated: location.recorded_at,
       },
     };
@@ -235,6 +237,7 @@ export class MonitoringService {
         speed: Number(loc.speed),
         fuel_level: loc.fuel_level !== null ? Number(loc.fuel_level) : null,
         status: loc.status,
+        engine_status: loc.engine_status || 'off',
         recorded_at: loc.recorded_at,
       })),
     };
@@ -248,8 +251,15 @@ export class MonitoringService {
     location.speed = dto.speed ?? 0;
     location.fuel_level = dto.fuel_level ?? null;
     location.status = dto.status ?? 'idle';
+    location.engine_status = dto.engine_status ?? 'off';
 
     const saved = await this.gpsRepository.save(location);
+
+    if (dto.engine_status) {
+      await this.vehicleRepository.update(dto.vehicle_id, {
+        engine_status: dto.engine_status,
+      });
+    }
 
     return {
       success: true,
@@ -262,6 +272,7 @@ export class MonitoringService {
         speed: Number(saved.speed),
         fuel_level: saved.fuel_level !== null ? Number(saved.fuel_level) : null,
         status: saved.status,
+        engine_status: saved.engine_status,
         recorded_at: saved.recorded_at,
       },
     };
@@ -286,6 +297,42 @@ export class MonitoringService {
       success: true,
       message: `Vehicle status updated to ${status}`,
       data: updated,
+    };
+  }
+
+  async updateVehicleEngine(vehicleId: string, engineStatus: string) {
+    if (!['on', 'off'].includes(engineStatus)) {
+      throw new BadRequestException(`Invalid engine status. Must be one of: on, off`);
+    }
+
+    const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    await this.vehicleRepository.update(vehicleId, {
+      engine_status: engineStatus,
+    });
+
+    const latestGps = await this.gpsRepository.findOne({
+      where: { vehicle_id: vehicleId },
+      order: { recorded_at: 'DESC' },
+    });
+
+    if (latestGps) {
+      latestGps.engine_status = engineStatus;
+      await this.gpsRepository.save(latestGps);
+    }
+
+    const updated = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
+
+    return {
+      success: true,
+      message: `Vehicle engine turned ${engineStatus === 'on' ? 'ON' : 'OFF'}`,
+      data: {
+        vehicle_id: vehicleId,
+        engine_status: updated?.engine_status || engineStatus,
+      },
     };
   }
 }

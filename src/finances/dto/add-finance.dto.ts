@@ -20,7 +20,7 @@ export class AddFinanceDto {
   @IsNotEmpty()
   reference_number!: string;
 
-  @IsEnum(['cash', 'transfer', 'e-wallet'])
+  @IsEnum(['cash', 'transfer', 'e-wallet', 'saldo'])
   @IsNotEmpty()
   payment_method!: string;
 

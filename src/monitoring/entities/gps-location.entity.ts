@@ -39,6 +39,13 @@ export class GpsLocation {
   })
   status!: string;
 
+  @Column({
+    type: 'enum',
+    enum: ['on', 'off'],
+    default: 'off',
+  })
+  engine_status!: string;
+
   @CreateDateColumn({ type: 'timestamp' })
   recorded_at!: Date;
 }

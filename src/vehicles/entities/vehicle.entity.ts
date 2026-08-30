@@ -42,6 +42,13 @@ export class Vehicle {
   @Column({ type: 'varchar', length: 50 })
   engine_number!: string;
 
+  @Column({
+    type: 'enum',
+    enum: ['on', 'off'],
+    default: 'off',
+  })
+  engine_status!: string;
+
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   daily_rate!: number;
 
