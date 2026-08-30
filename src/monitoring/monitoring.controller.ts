@@ -76,4 +76,14 @@ export class MonitoringController {
   ) {
     return this.monitoringService.updateVehicleStatus(id, status);
   }
+
+  @Put('vehicles/:id/engine')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions('monitoring.update')
+  updateVehicleEngine(
+    @Param('id') id: string,
+    @Body('engine_status') engine_status: string,
+  ) {
+    return this.monitoringService.updateVehicleEngine(id, engine_status);
+  }
 }

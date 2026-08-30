@@ -41,7 +41,7 @@ export class UpdateDriverDto {
   emergency_contact!: string;
 
   @IsOptional()
-  @IsEmail()
+  @IsString()
   emergency_email!: string;
 
   @IsOptional()

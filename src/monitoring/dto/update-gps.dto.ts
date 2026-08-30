@@ -34,4 +34,8 @@ export class UpdateGpsDto {
   @IsOptional()
   @IsEnum(['emergency', 'moving', 'idle'])
   status?: string;
+
+  @IsOptional()
+  @IsEnum(['on', 'off'])
+  engine_status?: string;
 }

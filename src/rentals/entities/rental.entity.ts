@@ -53,9 +53,12 @@ export class Rental {
 
   @Column({
     type: 'enum',
-    enum: ['Bank', 'Cash', 'E Wallet'],
+    enum: ['Bank', 'Cash', 'E Wallet', 'Saldo'],
   })
   method_payment!: string;
+
+  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
+  saldo_deducted!: number;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   document_contract!: string;

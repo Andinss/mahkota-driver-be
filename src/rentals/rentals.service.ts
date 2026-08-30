@@ -6,11 +6,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
+import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
+import { SaldoTransaction } from '../saldo/entities/saldo-transaction.entity';
+import { Finance } from '../finances/entities/finance.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { RentalQueryDto } from './dto/rental-query.dto';
 import { RentalExportDto } from './dto/rental-export.dto';
@@ -26,8 +29,26 @@ export class RentalsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
+    @InjectRepository(DriverSaldo)
+    private readonly driverSaldoRepository: Repository<DriverSaldo>,
+    @InjectRepository(SaldoTransaction)
+    private readonly saldoTransactionRepository: Repository<SaldoTransaction>,
+    @InjectRepository(Finance)
+    private readonly financesRepository: Repository<Finance>,
     private readonly dataSource: DataSource,
   ) {}
+
+  private async findSaldoForUpdate(
+    queryRunner: QueryRunner,
+    driverId: string,
+  ): Promise<DriverSaldo | null> {
+    const rows = await queryRunner.query(
+      'SELECT id, driver_id, balance, created_at, updated_at FROM driver_saldo WHERE driver_id = $1 FOR UPDATE',
+      [driverId],
+    );
+    if (!rows || rows.length === 0) return null;
+    return this.driverSaldoRepository.create(rows[0] as Partial<DriverSaldo>);
+  }
 
   async autoSetLateStatus(): Promise<number> {
     const now = new Date();
@@ -208,8 +229,61 @@ export class RentalsService {
         }
       }
 
-      const rental = this.rentalsRepository.create(data);
+      let saldoDeducted = 0;
+
+      if (data.method_payment === 'Saldo') {
+        const saldo = await this.findSaldoForUpdate(queryRunner, data.driver_id);
+
+        const totalAmount = data.total_revenue;
+        if (!saldo || Number(saldo.balance) < totalAmount) {
+          throw new BadRequestException(
+            `Saldo tidak mencukupi. Saldo saat ini: Rp ${Number(saldo?.balance || 0).toLocaleString('id-ID')}, dibutuhkan: Rp ${totalAmount.toLocaleString('id-ID')}`,
+          );
+        }
+
+        const balanceBefore = Number(saldo.balance);
+        const balanceAfter = balanceBefore - totalAmount;
+
+        saldo.balance = balanceAfter;
+        await queryRunner.manager.save(saldo);
+
+        const tx = this.saldoTransactionRepository.create({
+          driver_id: data.driver_id,
+          driver_saldo_id: saldo.id,
+          type: 'rental_payment',
+          amount: totalAmount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          notes: `Pembayaran rental dari saldo`,
+        });
+        await queryRunner.manager.save(tx);
+
+        saldoDeducted = totalAmount;
+      }
+
+      const rental = this.rentalsRepository.create({
+        ...data,
+        saldo_deducted: saldoDeducted,
+        payment_status: data.method_payment === 'Saldo' ? 'paid' : (data as any).payment_status || 'unpaid',
+      });
       const result = await queryRunner.manager.save(rental);
+
+      if (data.method_payment === 'Saldo' && saldoDeducted > 0) {
+        const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : 'Driver';
+        const finance = this.financesRepository.create({
+          payment_date: new Date(),
+          reference_number: `SALDO/${result.rental_number}`,
+          payment_method: 'saldo',
+          amount_received: saldoDeducted,
+          notes: `Pembayaran rental ${result.rental_number} dari saldo driver`,
+          payer: driverName,
+          driver_id: data.driver_id,
+          finance_type: 'rental',
+          rentals: [{ id: result.id } as any],
+          is_active: true,
+        });
+        await queryRunner.manager.save(finance);
+      }
 
       await queryRunner.manager.update(Vehicle, data.vehicle_id, { status: 'rented' });
 
@@ -230,7 +304,7 @@ export class RentalsService {
           } catch {}
         }
       }
-      if (error instanceof NotFoundException) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
       throw new InternalServerErrorException('Failed to create rental');
@@ -552,42 +626,92 @@ export class RentalsService {
   async delete(
     rentalId: string,
   ): Promise<{ success: boolean; message: string }> {
-    let existingRental = await this.rentalsRepository.findOne({
-      where: { id: rentalId },
-    });
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!existingRental && /^[0-9a-f-]{36}$/i.test(rentalId)) {
-      existingRental = await this.rentalsRepository.findOne({
+    try {
+      let existingRental = await queryRunner.manager.findOne(Rental, {
         where: { id: rentalId },
+        relations: { finances: true },
       });
-    }
 
-    if (!existingRental) {
-      throw new NotFoundException('Rental not found');
-    }
+      if (!existingRental && /^[0-9a-f-]{36}$/i.test(rentalId)) {
+        existingRental = await queryRunner.manager.findOne(Rental, {
+          where: { id: rentalId },
+          relations: { finances: true },
+        });
+      }
 
-    const fileFields = [existingRental.document_contract];
+      if (!existingRental) {
+        throw new NotFoundException('Rental not found');
+      }
 
-    for (const filePath of fileFields) {
-      if (filePath) {
-        try {
-          const fullPath = filePath.startsWith('/')
-            ? filePath
-            : `./${filePath}`;
-          if (existsSync(fullPath)) {
-            unlinkSync(fullPath);
-          }
-        } catch (err) {
-          console.error(`Failed to delete file ${filePath}:`, err);
+      if (existingRental.method_payment === 'Saldo' && Number(existingRental.saldo_deducted) > 0) {
+        const saldo = await queryRunner.manager.findOne(DriverSaldo, {
+          where: { driver_id: existingRental.driver_id },
+        });
+
+        if (saldo) {
+          const balanceBefore = Number(saldo.balance);
+          const balanceAfter = balanceBefore + Number(existingRental.saldo_deducted);
+
+          saldo.balance = balanceAfter;
+          await queryRunner.manager.save(saldo);
+
+          const tx = queryRunner.manager.create(SaldoTransaction, {
+            driver_id: existingRental.driver_id,
+            driver_saldo_id: saldo.id,
+            type: 'refund',
+            amount: Number(existingRental.saldo_deducted),
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            reference_id: existingRental.id,
+            notes: `Refund otomatis karena rental ${existingRental.rental_number} dihapus`,
+          });
+          await queryRunner.manager.save(tx);
         }
       }
+
+      if (existingRental.finances && existingRental.finances.length > 0) {
+        for (const finance of existingRental.finances) {
+          await queryRunner.manager.delete(Finance, finance.id);
+        }
+      }
+
+      if (existingRental.vehicle_id) {
+        await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, { status: 'Available' });
+      }
+
+      const fileFields = [existingRental.document_contract];
+      for (const filePath of fileFields) {
+        if (filePath) {
+          try {
+            const fullPath = filePath.startsWith('/') ? filePath : `./${filePath}`;
+            if (existsSync(fullPath)) {
+              unlinkSync(fullPath);
+            }
+          } catch (err) {
+            console.error(`Failed to delete file ${filePath}:`, err);
+          }
+        }
+      }
+
+      await queryRunner.manager.delete(Rental, existingRental.id);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        success: true,
+        message: 'Rental deleted successfully',
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Failed to delete rental:', error);
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Failed to delete rental');
+    } finally {
+      await queryRunner.release();
     }
-
-    await this.rentalsRepository.delete(existingRental.id);
-
-    return {
-      success: true,
-      message: 'Rental deleted successfully',
-    };
   }
 }

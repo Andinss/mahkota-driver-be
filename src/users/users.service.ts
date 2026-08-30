@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { UserExportDto } from './dto/user-export.dto';
+import { UserQueryDto } from './dto/user-query.dto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -37,18 +38,50 @@ export class UsersService {
     };
   }
 
-  async findAll(): Promise<{
+  async findAll(query?: UserQueryDto): Promise<{
     success: boolean;
     message: string;
     data: User[];
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    };
   }> {
-    const result = await this.usersRepository.find({
-      relations: { role: true },
-    });
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.usersRepository
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'role')
+      .orderBy('u.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.andWhere(
+        '(u.username ILIKE :search OR u.fullname ILIKE :search OR u.email ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [data, total] = await qb
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const totalPages = Math.ceil(total / limit);
+
     return {
       success: true,
       message: 'Users retrieved successfully',
-      data: result,
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
     };
   }
 

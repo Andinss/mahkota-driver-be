@@ -11,6 +11,8 @@ import { LatePayment } from './late-payments/entities/late-payment.entity';
 import { GpsLocation } from './monitoring/entities/gps-location.entity';
 import { Setting } from './settings/entities/setting.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
+import { DriverSaldo } from './saldo/entities/driver-saldo.entity';
+import { SaldoTransaction } from './saldo/entities/saldo-transaction.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -26,6 +28,7 @@ const modulePermissions: Record<string, string[]> = {
   finance: ['create', 'read', 'update', 'delete', 'approve'],
   late_payment: ['read', 'approve'],
   monitoring: ['read', 'read.all', 'update'],
+  saldo: ['read', 'top_up', 'deduct', 'refund'],
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
 };
@@ -57,6 +60,7 @@ const rolesData: RoleSeed[] = [
         'driver.create', 'driver.read.own', 'driver.update.own', 'driver.delete.own', 'driver.assign_vehicle',
         'vehicle.read',
         'rental.read', 'rental.create',
+        'saldo.read', 'saldo.top_up',
       ];
       return perms.includes(name);
     },
@@ -85,7 +89,12 @@ const rolesData: RoleSeed[] = [
   },
   {
     name: 'Driver', code: 'DRIVER', description: 'Driver - no dashboard access',
-    permissionFilter: () => false,
+    permissionFilter: (name) => {
+      const perms = [
+        'saldo.read', 'saldo.top_up',
+      ];
+      return perms.includes(name);
+    },
   },
   {
     name: 'Owner', code: 'OWNER', description: 'Business owner - read-only reports',
@@ -116,6 +125,7 @@ const vehiclesData = [
     vin_number: 'MHFX1234567890123',
     color: 'Silver', status: 'rented',
     engine_number: 'EN-TOYOTA-001',
+    engine_status: 'on',
     daily_rate: 350000,
   },
   {
@@ -125,6 +135,7 @@ const vehiclesData = [
     vin_number: 'MHFX9876543210987',
     color: 'Red', status: 'rented',
     engine_number: 'EN-HONDA-001',
+    engine_status: 'off',
     daily_rate: 300000,
   },
   {
@@ -134,6 +145,7 @@ const vehiclesData = [
     vin_number: 'MHFX4567890123456',
     color: 'Black', status: 'Available',
     engine_number: 'EN-TOYOTA-002',
+    engine_status: 'off',
     daily_rate: 500000,
   },
   {
@@ -141,8 +153,9 @@ const vehiclesData = [
     launching_year: new Date('2023-08-05'),
     license_plate: 'B 3456 JKL',
     vin_number: 'MHFX1122334455667',
-    color: 'White', status: 'Available',
+    color: 'White', status: 'rented',
     engine_number: 'EN-DAIHATSU-001',
+    engine_status: 'on',
     daily_rate: 280000,
   },
   {
@@ -150,8 +163,9 @@ const vehiclesData = [
     launching_year: new Date('2022-11-01'),
     license_plate: 'B 7890 MNO',
     vin_number: 'MHFX7788990011223',
-    color: 'Blue', status: 'Maintenance',
+    color: 'Blue', status: 'rented',
     engine_number: 'EN-SUZUKI-001',
+    engine_status: 'off',
     daily_rate: 320000,
   },
   {
@@ -159,8 +173,9 @@ const vehiclesData = [
     launching_year: new Date('2023-05-15'),
     license_plate: 'B 2345 PQR',
     vin_number: 'MHFX3344556677889',
-    color: 'Grey', status: 'Available',
+    color: 'Grey', status: 'rented',
     engine_number: 'EN-MITSUBISHI-001',
+    engine_status: 'on',
     daily_rate: 400000,
   },
   {
@@ -170,6 +185,7 @@ const vehiclesData = [
     vin_number: 'MHFX9988776655443',
     color: 'White', status: 'Available',
     engine_number: 'EN-TOYOTA-003',
+    engine_status: 'off',
     daily_rate: 600000,
   },
 ];
@@ -251,6 +267,8 @@ async function seed() {
   const gpsRepository = app.get<Repository<GpsLocation>>(getRepositoryToken(GpsLocation));
   const settingRepository = app.get<Repository<Setting>>(getRepositoryToken(Setting));
   const auditRepository = app.get<Repository<AuditLog>>(getRepositoryToken(AuditLog));
+  const driverSaldoRepository = app.get<Repository<DriverSaldo>>(getRepositoryToken(DriverSaldo));
+  const saldoTransactionRepository = app.get<Repository<SaldoTransaction>>(getRepositoryToken(SaldoTransaction));
 
   // ═══════════════════════════════════════════════════════════
   // 1. SEED PERMISSIONS
@@ -470,6 +488,22 @@ async function seed() {
       total_revenue: 14750000,
       payment_status: 'pending_confirmation',
     },
+    {
+      driver: createdDrivers[1],
+      vehicle: createdVehicles[4],
+      start_date: new Date('2026-08-22'),
+      end_date: new Date('2026-08-26'),
+      total_duration: 4,
+      daily_rate: 320000,
+      deposit_amount: 0,
+      method_payment: 'Saldo',
+      saldo_deducted: 1280000,
+      total_daily_rate: 1280000,
+      security_deposit: 0,
+      service_fee: 0,
+      total_revenue: 1280000,
+      payment_status: 'paid',
+    },
   ];
 
   const createdRentals: Rental[] = [];
@@ -483,6 +517,7 @@ async function seed() {
       daily_rate: rData.daily_rate,
       deposit_amount: rData.deposit_amount,
       method_payment: rData.method_payment,
+      saldo_deducted: rData.saldo_deducted ?? 0,
       total_daily_rate: rData.total_daily_rate,
       security_deposit: rData.security_deposit,
       service_fee: rData.service_fee,
@@ -571,6 +606,18 @@ async function seed() {
       rentals: [],
       is_active: true,
     },
+    {
+      payment_date: new Date('2026-08-22'),
+      reference_number: 'SALDO/' + (createdRentals[5]?.rental_number || 'RENT/006'),
+      payment_method: 'saldo',
+      amount_received: 1280000,
+      notes: 'Pembayaran rental ' + (createdRentals[5]?.rental_number || 'RENT/006') + ' dari saldo driver',
+      payer: 'Andi Pratama',
+      driver: createdDrivers[1],
+      finance_type: 'rental',
+      rentals: [createdRentals[5]],
+      is_active: true,
+    },
   ];
 
   const createdFinances: Finance[] = [];
@@ -648,12 +695,12 @@ async function seed() {
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding GPS Locations ──');
   const gpsData = [
-    { vehicle: createdVehicles[0], latitude: -6.2088, longitude: 106.8456, speed: 45, fuel_level: 72, status: 'moving' },
-    { vehicle: createdVehicles[1], latitude: -6.1750, longitude: 106.8270, speed: 0, fuel_level: 30, status: 'idle' },
-    { vehicle: createdVehicles[2], latitude: -6.2297, longitude: 106.6891, speed: 60, fuel_level: 85, status: 'moving' },
-    { vehicle: createdVehicles[3], latitude: -6.2615, longitude: 106.8100, speed: 0, fuel_level: 45, status: 'idle' },
-    { vehicle: createdVehicles[5], latitude: -6.1944, longitude: 106.8329, speed: 35, fuel_level: 60, status: 'moving' },
-    { vehicle: createdVehicles[6], latitude: -6.1500, longitude: 106.8000, speed: 0, fuel_level: 90, status: 'idle' },
+    { vehicle: createdVehicles[0], latitude: -6.2088, longitude: 106.8456, speed: 45, fuel_level: 72, status: 'moving', engine_status: 'on' },
+    { vehicle: createdVehicles[1], latitude: -6.1750, longitude: 106.8270, speed: 0, fuel_level: 30, status: 'idle', engine_status: 'off' },
+    { vehicle: createdVehicles[2], latitude: -6.2297, longitude: 106.6891, speed: 60, fuel_level: 85, status: 'moving', engine_status: 'on' },
+    { vehicle: createdVehicles[3], latitude: -6.2615, longitude: 106.8100, speed: 0, fuel_level: 45, status: 'idle', engine_status: 'off' },
+    { vehicle: createdVehicles[5], latitude: -6.1944, longitude: 106.8329, speed: 35, fuel_level: 60, status: 'moving', engine_status: 'on' },
+    { vehicle: createdVehicles[6], latitude: -6.1500, longitude: 106.8000, speed: 0, fuel_level: 90, status: 'idle', engine_status: 'off' },
   ];
 
   for (const gData of gpsData) {
@@ -664,13 +711,86 @@ async function seed() {
       speed: gData.speed,
       fuel_level: gData.fuel_level,
       status: gData.status,
+      engine_status: gData.engine_status,
     });
     await gpsRepository.save(gps);
-    console.log(`  GPS: ${gData.vehicle.merk} ${gData.vehicle.model} @ ${gData.latitude}, ${gData.longitude} [${gData.status}]`);
+
+    await vehicleRepository.update(gData.vehicle.id, {
+      engine_status: gData.engine_status,
+    });
+
+    console.log(`  GPS: ${gData.vehicle.merk} ${gData.vehicle.model} @ ${gData.latitude}, ${gData.longitude} [${gData.status}] engine=${gData.engine_status}`);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 10. SEED SETTINGS
+  // 10. SEED DRIVER SALDO
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n── Seeding Driver Saldo ──');
+  const saldoRental = createdRentals[5];
+
+  const saldoData = [
+    { driver: createdDrivers[0], balance: 5000000 },
+    { driver: createdDrivers[1], balance: 1720000 },
+    { driver: createdDrivers[2], balance: 7500000 },
+    { driver: createdDrivers[3], balance: 500000 },
+    { driver: createdDrivers[4], balance: 2000000 },
+  ];
+
+  const saldoLedger: {
+    driver: Driver;
+    txType: 'top_up' | 'rental_payment' | 'refund';
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    referenceId?: string;
+    notes: string;
+  }[] = [
+    { driver: createdDrivers[0], txType: 'top_up', amount: 5000000, balanceBefore: 0, balanceAfter: 5000000, notes: 'Initial balance seed' },
+    { driver: createdDrivers[1], txType: 'top_up', amount: 3000000, balanceBefore: 0, balanceAfter: 3000000, notes: 'Initial balance seed' },
+    { driver: createdDrivers[1], txType: 'rental_payment', amount: 1280000, balanceBefore: 3000000, balanceAfter: 1720000, referenceId: saldoRental?.id, notes: 'Pembayaran rental dari saldo' },
+    { driver: createdDrivers[2], txType: 'top_up', amount: 7500000, balanceBefore: 0, balanceAfter: 7500000, notes: 'Initial balance seed' },
+    { driver: createdDrivers[3], txType: 'refund', amount: 500000, balanceBefore: 0, balanceAfter: 500000, referenceId: createdRentals[3]?.id, notes: 'Refund ke saldo' },
+    { driver: createdDrivers[4], txType: 'top_up', amount: 2000000, balanceBefore: 0, balanceAfter: 2000000, notes: 'Initial balance seed' },
+  ];
+
+  for (const sData of saldoData) {
+    let saldo = await driverSaldoRepository.findOne({
+      where: { driver_id: sData.driver.id },
+    });
+    if (saldo) {
+      console.log(`  Saldo already exists for driver: ${sData.driver.first_name}, resetting balance`);
+      saldo.balance = sData.balance;
+      await driverSaldoRepository.save(saldo);
+    } else {
+      saldo = driverSaldoRepository.create({
+        driver_id: sData.driver.id,
+        balance: sData.balance,
+      });
+      saldo = await driverSaldoRepository.save(saldo);
+      console.log(`  Created saldo: ${sData.driver.first_name} Rp ${sData.balance.toLocaleString('id-ID')}`);
+    }
+  }
+
+  for (const tx of saldoLedger) {
+    const saldo = await driverSaldoRepository.findOne({
+      where: { driver_id: tx.driver.id },
+    });
+    const entry = saldoTransactionRepository.create({
+      driver_id: tx.driver.id,
+      driver_saldo_id: saldo?.id || undefined,
+      type: tx.txType,
+      amount: tx.amount,
+      balance_before: tx.balanceBefore,
+      balance_after: tx.balanceAfter,
+      reference_id: tx.referenceId || undefined,
+      notes: tx.notes,
+    });
+    await saldoTransactionRepository.save(entry);
+    console.log(`  Saldo ${tx.txType}: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')} → saldo ${tx.balanceAfter.toLocaleString('id-ID')}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 11. SEED SETTINGS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Settings ──');
   for (const sData of settingsData) {
@@ -685,7 +805,7 @@ async function seed() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 11. SEED AUDIT LOGS
+  // 12. SEED AUDIT LOGS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Audit Logs ──');
   const auditData = [

@@ -22,6 +22,7 @@ import { LatePaymentsModule } from './late-payments/late-payments.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { SaldoModule } from './saldo/saldo.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     SettingsModule,
     AuditModule,
     MonitoringModule,
+    SaldoModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [AppService, VehicleAssignmentService, {

@@ -40,7 +40,7 @@ export class AddDriverDto {
   @IsString()
   emergency_contact!: string;
 
-  @IsEmail()
+  @IsString()
   emergency_email!: string;
 
   @IsString()

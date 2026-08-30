@@ -39,8 +39,14 @@ export class AddRentalDto {
   @Type(() => Number)
   deposit_amount!: number;
 
-  @IsEnum(['Bank', 'Cash', 'E Wallet'])
+  @IsEnum(['Bank', 'Cash', 'E Wallet', 'Saldo'])
   method_payment!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  saldo_deducted?: number;
 
   @IsOptional()
   @IsString()

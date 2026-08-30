@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Driver } from './entities/driver.entity';
+import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
@@ -19,6 +20,8 @@ export class DriverService {
   constructor(
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
+    @InjectRepository(DriverSaldo)
+    private readonly driverSaldoRepository: Repository<DriverSaldo>,
   ) {}
 
   async findAll(query?: DriverQueryDto) {
@@ -29,10 +32,12 @@ export class DriverService {
     const qb = this.driversRepository
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
+      .leftJoinAndSelect('d.saldo', 'saldo')
+      .where('d.is_active = :isActive', { isActive: true })
       .orderBy('d.created_at', 'DESC');
 
     if (query?.search) {
-      qb.where(
+      qb.andWhere(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
@@ -60,7 +65,7 @@ export class DriverService {
 
   async findById(id: string) {
     const driver = await this.driversRepository.findOne({
-      where: { id },
+      where: { id, is_active: true } as any,
       relations: { created_by: true },
     });
 
@@ -77,7 +82,7 @@ export class DriverService {
 
   async findDetailById(id: string) {
     const driver = await this.driversRepository.findOne({
-      where: { id },
+      where: { id, is_active: true } as any,
       relations: { created_by: true },
     });
 
@@ -93,12 +98,13 @@ export class DriverService {
   }
 
   async getSummary() {
-    const totalDrivers = await this.driversRepository.count();
+    const totalDrivers = await this.driversRepository.count({ where: { is_active: true } as any });
 
     const genderBreakdown = await this.driversRepository
       .createQueryBuilder('d')
       .select('d.gender', 'gender')
       .addSelect('COUNT(d.id)', 'count')
+      .where('d.is_active = :isActive', { isActive: true })
       .groupBy('d.gender')
       .getRawMany();
 
@@ -154,6 +160,17 @@ export class DriverService {
         created_by_id: userId,
       } as unknown as Driver);
       const result = await this.driversRepository.save(driver);
+
+      const existingSaldo = await this.driverSaldoRepository.findOne({
+        where: { driver_id: result.id },
+      });
+      if (!existingSaldo) {
+        const saldo = this.driverSaldoRepository.create({
+          driver_id: result.id,
+          balance: 0,
+        });
+        await this.driverSaldoRepository.save(saldo);
+      }
 
       return {
         success: true,
@@ -306,7 +323,7 @@ export class DriverService {
       }
     }
 
-    await this.driversRepository.delete(existingDriver.id);
+    await this.driversRepository.update(existingDriver.id, { is_active: false } as any);
 
     return {
       success: true,
@@ -320,10 +337,10 @@ export class DriverService {
       ? query.columns.split(',')
       : ['name', 'employeeId', 'phoneNumber', 'email'];
 
-    const qb = this.driversRepository.createQueryBuilder('d');
+    const qb = this.driversRepository.createQueryBuilder('d').where('d.is_active = :isActive', { isActive: true });
 
     if (query.search) {
-      qb.where(
+      qb.andWhere(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );

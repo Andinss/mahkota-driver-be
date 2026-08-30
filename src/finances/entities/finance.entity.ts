@@ -25,7 +25,7 @@ export class Finance {
 
   @Column({
     type: 'enum',
-    enum: ['cash', 'transfer', 'e-wallet'],
+    enum: ['cash', 'transfer', 'e-wallet', 'saldo'],
     nullable: false,
   })
   payment_method!: string;
