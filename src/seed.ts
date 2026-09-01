@@ -427,6 +427,8 @@ async function seed() {
       service_fee: 250000,
       total_revenue: 12750000,
       payment_status: 'partial',
+      rental_duration: 'bulanan',
+      rental_service: 'lepas kunci',
     },
     {
       driver: createdDrivers[1],
@@ -442,6 +444,8 @@ async function seed() {
       service_fee: 250000,
       total_revenue: 10750000,
       payment_status: 'paid',
+      rental_duration: 'bulanan',
+      rental_service: 'pakai supir',
     },
     {
       driver: createdDrivers[2],
@@ -457,6 +461,8 @@ async function seed() {
       service_fee: 250000,
       total_revenue: 18250000,
       payment_status: 'unpaid',
+      rental_duration: 'bulanan',
+      rental_service: 'lepas kunci',
     },
     {
       driver: createdDrivers[3],
@@ -472,6 +478,8 @@ async function seed() {
       service_fee: 250000,
       total_revenue: 5450000,
       payment_status: 'late',
+      rental_duration: 'mingguan',
+      rental_service: 'lepas kunci',
     },
     {
       driver: createdDrivers[4],
@@ -487,6 +495,8 @@ async function seed() {
       service_fee: 250000,
       total_revenue: 14750000,
       payment_status: 'pending_confirmation',
+      rental_duration: 'tahunan',
+      rental_service: 'pakai supir',
     },
     {
       driver: createdDrivers[1],
@@ -503,6 +513,8 @@ async function seed() {
       service_fee: 0,
       total_revenue: 1280000,
       payment_status: 'paid',
+      rental_duration: 'harian',
+      rental_service: 'lepas kunci',
     },
   ];
 
@@ -523,6 +535,8 @@ async function seed() {
       service_fee: rData.service_fee,
       total_revenue: rData.total_revenue,
       payment_status: rData.payment_status,
+      rental_duration: rData.rental_duration,
+      rental_service: rData.rental_service,
     });
     const saved = await rentalRepository.save(rental);
     createdRentals.push(saved);

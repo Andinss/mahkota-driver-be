@@ -25,7 +25,7 @@ export class Rental {
   @Column({ type: 'uuid' })
   driver_id!: string;
 
-  @ManyToOne(() => Driver)
+  @ManyToOne(() => Driver, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'driver_id' })
   driver!: Driver;
 
@@ -74,6 +74,18 @@ export class Rental {
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   total_revenue!: number;
+
+  @Column({
+    type: 'enum',
+    enum: ['harian', 'mingguan', 'bulanan', 'tahunan'],
+  })
+  rental_duration!: string;
+
+  @Column({
+    type: 'enum',
+    enum: ['lepas kunci', 'pakai supir'],
+  })
+  rental_service!: string;
 
   @Column({
     type: 'enum',

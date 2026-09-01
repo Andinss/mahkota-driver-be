@@ -33,11 +33,10 @@ export class DriverService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
       .leftJoinAndSelect('d.saldo', 'saldo')
-      .where('d.is_active = :isActive', { isActive: true })
       .orderBy('d.created_at', 'DESC');
 
     if (query?.search) {
-      qb.andWhere(
+      qb.where(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
@@ -65,7 +64,7 @@ export class DriverService {
 
   async findById(id: string) {
     const driver = await this.driversRepository.findOne({
-      where: { id, is_active: true } as any,
+      where: { id },
       relations: { created_by: true },
     });
 
@@ -82,7 +81,7 @@ export class DriverService {
 
   async findDetailById(id: string) {
     const driver = await this.driversRepository.findOne({
-      where: { id, is_active: true } as any,
+      where: { id },
       relations: { created_by: true },
     });
 
@@ -98,13 +97,12 @@ export class DriverService {
   }
 
   async getSummary() {
-    const totalDrivers = await this.driversRepository.count({ where: { is_active: true } as any });
+    const totalDrivers = await this.driversRepository.count();
 
     const genderBreakdown = await this.driversRepository
       .createQueryBuilder('d')
       .select('d.gender', 'gender')
       .addSelect('COUNT(d.id)', 'count')
-      .where('d.is_active = :isActive', { isActive: true })
       .groupBy('d.gender')
       .getRawMany();
 
@@ -323,7 +321,7 @@ export class DriverService {
       }
     }
 
-    await this.driversRepository.update(existingDriver.id, { is_active: false } as any);
+    await this.driversRepository.delete(existingDriver.id);
 
     return {
       success: true,
@@ -337,10 +335,10 @@ export class DriverService {
       ? query.columns.split(',')
       : ['name', 'employeeId', 'phoneNumber', 'email'];
 
-    const qb = this.driversRepository.createQueryBuilder('d').where('d.is_active = :isActive', { isActive: true });
+    const qb = this.driversRepository.createQueryBuilder('d');
 
     if (query.search) {
-      qb.andWhere(
+      qb.where(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
