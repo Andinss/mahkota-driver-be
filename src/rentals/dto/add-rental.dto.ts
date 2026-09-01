@@ -71,4 +71,10 @@ export class AddRentalDto {
   @Min(0)
   @Type(() => Number)
   total_revenue!: number;
+
+  @IsEnum(['harian', 'mingguan', 'bulanan', 'tahunan'])
+  rental_duration!: string;
+
+  @IsEnum(['lepas kunci', 'pakai supir'])
+  rental_service!: string;
 }

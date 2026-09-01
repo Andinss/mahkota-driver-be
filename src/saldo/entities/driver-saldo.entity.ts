@@ -19,7 +19,7 @@ export class DriverSaldo {
   @Column({ type: 'uuid', unique: true })
   driver_id!: string;
 
-  @ManyToOne(() => Driver)
+  @ManyToOne(() => Driver, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'driver_id' })
   driver!: Driver;
 

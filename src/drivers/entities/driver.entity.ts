@@ -80,9 +80,6 @@ export class Driver {
   @JoinColumn({ name: 'created_by_id' })
   created_by!: User;
 
-  @Column({ type: 'boolean', default: true })
-  is_active!: boolean;
-
   @OneToOne(() => DriverSaldo, (saldo) => saldo.driver)
   saldo!: DriverSaldo;
 

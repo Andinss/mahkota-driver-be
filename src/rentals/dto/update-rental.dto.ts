@@ -79,6 +79,14 @@ export class UpdateRentalDto {
   total_revenue!: number;
 
   @IsOptional()
+  @IsEnum(['harian', 'mingguan', 'bulanan', 'tahunan'])
+  rental_duration!: string;
+
+  @IsOptional()
+  @IsEnum(['lepas kunci', 'pakai supir'])
+  rental_service!: string;
+
+  @IsOptional()
   @IsEnum(['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'])
   payment_status!: string;
 }
