@@ -133,7 +133,7 @@ export class LatePaymentsService {
           amount_received: Number(payment.amount),
           payer: payment.driver_name || 'driver',
           driver_id: payment.driver_id,
-          finance_type: 'late_payment',
+          finance_type: 'paid',
           notes: adminNote || 'Auto-created from late payment approval',
           rental_ids: rentalIds,
         });

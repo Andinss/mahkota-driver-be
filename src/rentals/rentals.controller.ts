@@ -53,12 +53,6 @@ export class RentalsController {
     });
   }
 
-  @Get('auto-set-late')
-  @Permissions('rental.update')
-  autoSetLate() {
-    return this.rentalService.autoSetLateStatus();
-  }
-
   @Get('summary')
   @Permissions('rental.read')
   getSummary() {
@@ -170,15 +164,6 @@ export class RentalsController {
     @Param('id') id: string,
   ) {
     return this.rentalService.update(id, updateRentalDto, files);
-  }
-
-  @Patch(':id/status')
-  @Permissions('rental.update')
-  updateStatus(
-    @Param('id') id: string,
-    @Body('payment_status') paymentStatus: string,
-  ) {
-    return this.rentalService.updatePaymentStatus(id, paymentStatus);
   }
 
   @Delete('delete/:id')

@@ -29,6 +29,10 @@ export class AddFinanceDto {
   amount_received!: number;
 
   @IsOptional()
+  @IsNumber()
+  deposit_amount?: number;
+
+  @IsOptional()
   @IsString()
   notes?: string;
 
@@ -41,7 +45,7 @@ export class AddFinanceDto {
   driver_id!: string;
 
   @IsOptional()
-  @IsEnum(['manual', 'rental', 'late_payment'])
+  @IsEnum(['paid', 'unpaid', 'pending'])
   finance_type?: string;
 
   @IsOptional()

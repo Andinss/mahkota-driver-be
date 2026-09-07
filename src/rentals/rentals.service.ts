@@ -11,9 +11,6 @@ import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
-import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
-import { SaldoTransaction } from '../saldo/entities/saldo-transaction.entity';
-import { Finance } from '../finances/entities/finance.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { RentalQueryDto } from './dto/rental-query.dto';
 import { RentalExportDto } from './dto/rental-export.dto';
@@ -29,46 +26,10 @@ export class RentalsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
-    @InjectRepository(DriverSaldo)
-    private readonly driverSaldoRepository: Repository<DriverSaldo>,
-    @InjectRepository(SaldoTransaction)
-    private readonly saldoTransactionRepository: Repository<SaldoTransaction>,
-    @InjectRepository(Finance)
-    private readonly financesRepository: Repository<Finance>,
     private readonly dataSource: DataSource,
   ) {}
 
-  private async findSaldoForUpdate(
-    queryRunner: QueryRunner,
-    driverId: string,
-  ): Promise<DriverSaldo | null> {
-    const rows = await queryRunner.query(
-      'SELECT id, driver_id, balance, created_at, updated_at FROM driver_saldo WHERE driver_id = $1 FOR UPDATE',
-      [driverId],
-    );
-    if (!rows || rows.length === 0) return null;
-    return this.driverSaldoRepository.create(rows[0] as Partial<DriverSaldo>);
-  }
-
-  async autoSetLateStatus(): Promise<number> {
-    const now = new Date();
-    const overdue = await this.rentalsRepository
-      .createQueryBuilder('r')
-      .where('r.end_date < :now', { now })
-      .andWhere('r.payment_status IN (:...statuses)', { statuses: ['unpaid', 'partial'] })
-      .getMany();
-
-    for (const rental of overdue) {
-      rental.payment_status = 'late';
-    }
-    await this.rentalsRepository.save(overdue);
-
-    return overdue.length;
-  }
-
   async findAll(query?: RentalQueryDto) {
-    await this.autoSetLateStatus();
-
     const page = query?.page || 1;
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
@@ -146,41 +107,22 @@ export class RentalsService {
   }
 
   async getSummary() {
-    const totalActive = await this.rentalsRepository.count();
     const totalResult = await this.rentalsRepository
       .createQueryBuilder('r')
-      .select('COALESCE(SUM(r.total_revenue), 0)', 'total_revenue')
-      .addSelect('COALESCE(SUM(r.security_deposit), 0)', 'total_deposit')
-      .addSelect('COALESCE(SUM(r.service_fee), 0)', 'total_service_fee')
-      .addSelect('COALESCE(SUM(r.deposit_amount), 0)', 'total_deposit_amount')
-      .addSelect('COALESCE(AVG(r.daily_rate), 0)', 'avg_daily_rate')
+      .select('COALESCE(AVG(r.daily_rate), 0)', 'avg_daily_rate')
       .addSelect('COUNT(r.id)', 'total_rentals')
+      .addSelect('COALESCE(SUM(CASE WHEN r.rental_service = \'lepas kunci\' THEN 1 ELSE 0 END), 0)', 'lepas_kunci')
+      .addSelect('COALESCE(SUM(CASE WHEN r.rental_service = \'pakai supir\' THEN 1 ELSE 0 END), 0)', 'pakai_supir')
       .getRawOne();
-
-    const byMethod = await this.rentalsRepository
-      .createQueryBuilder('r')
-      .select('r.method_payment', 'method')
-      .addSelect('COALESCE(SUM(r.total_revenue), 0)', 'total')
-      .addSelect('COUNT(r.id)', 'count')
-      .groupBy('r.method_payment')
-      .getRawMany();
-
-    const amountByMethod: Record<string, number> = {};
-    for (const row of byMethod) {
-      amountByMethod[row.method] = Number(row.total);
-    }
 
     return {
       success: true,
       message: 'Rental summary retrieved successfully',
       data: {
         total_rentals: Number(totalResult?.total_rentals || 0),
-        total_revenue: Number(totalResult?.total_revenue || 0),
-        total_deposit: Number(totalResult?.total_deposit || 0),
-        total_service_fee: Number(totalResult?.total_service_fee || 0),
-        total_deposit_amount: Number(totalResult?.total_deposit_amount || 0),
         avg_daily_rate: Number(totalResult?.avg_daily_rate || 0),
-        amount_by_method: amountByMethod,
+        lepas_kunci: Number(totalResult?.lepas_kunci || 0),
+        pakai_supir: Number(totalResult?.pakai_supir || 0),
       },
     };
   }
@@ -229,61 +171,10 @@ export class RentalsService {
         }
       }
 
-      let saldoDeducted = 0;
-
-      if (data.method_payment === 'Saldo') {
-        const saldo = await this.findSaldoForUpdate(queryRunner, data.driver_id);
-
-        const totalAmount = data.total_revenue;
-        if (!saldo || Number(saldo.balance) < totalAmount) {
-          throw new BadRequestException(
-            `Saldo tidak mencukupi. Saldo saat ini: Rp ${Number(saldo?.balance || 0).toLocaleString('id-ID')}, dibutuhkan: Rp ${totalAmount.toLocaleString('id-ID')}`,
-          );
-        }
-
-        const balanceBefore = Number(saldo.balance);
-        const balanceAfter = balanceBefore - totalAmount;
-
-        saldo.balance = balanceAfter;
-        await queryRunner.manager.save(saldo);
-
-        const tx = this.saldoTransactionRepository.create({
-          driver_id: data.driver_id,
-          driver_saldo_id: saldo.id,
-          type: 'rental_payment',
-          amount: totalAmount,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          notes: `Pembayaran rental dari saldo`,
-        });
-        await queryRunner.manager.save(tx);
-
-        saldoDeducted = totalAmount;
-      }
-
       const rental = this.rentalsRepository.create({
         ...data,
-        saldo_deducted: saldoDeducted,
-        payment_status: data.method_payment === 'Saldo' ? 'paid' : (data as any).payment_status || 'unpaid',
       });
       const result = await queryRunner.manager.save(rental);
-
-      if (data.method_payment === 'Saldo' && saldoDeducted > 0) {
-        const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : 'Driver';
-        const finance = this.financesRepository.create({
-          payment_date: new Date(),
-          reference_number: `SALDO/${result.rental_number}`,
-          payment_method: 'saldo',
-          amount_received: saldoDeducted,
-          notes: `Pembayaran rental ${result.rental_number} dari saldo driver`,
-          payer: driverName,
-          driver_id: data.driver_id,
-          finance_type: 'rental',
-          rentals: [{ id: result.id } as any],
-          is_active: true,
-        });
-        await queryRunner.manager.save(finance);
-      }
 
       await queryRunner.manager.update(Vehicle, data.vehicle_id, { status: 'rented' });
 
@@ -400,51 +291,11 @@ export class RentalsService {
     }
   }
 
-  async updatePaymentStatus(rentalId: string, paymentStatus: string) {
-    const validStatuses = ['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'];
-    if (!validStatuses.includes(paymentStatus)) {
-      throw new BadRequestException(`Invalid payment status. Must be one of: ${validStatuses.join(', ')}`);
-    }
-
-    const rental = await this.rentalsRepository.findOne({ where: { id: rentalId }, relations: { vehicle: true } });
-    if (!rental) {
-      throw new NotFoundException('Rental not found');
-    }
-
-    const allowedTransitions: Record<string, string[]> = {
-      unpaid: ['paid', 'late', 'pending_confirmation', 'partial'],
-      late: ['paid', 'pending_confirmation'],
-      pending_confirmation: ['paid', 'late', 'unpaid'],
-      partial: ['paid'],
-      paid: [],
-    };
-
-    const allowed = allowedTransitions[rental.payment_status] || [];
-    if (!allowed.includes(paymentStatus)) {
-      throw new BadRequestException(
-        `Cannot change status from '${rental.payment_status}' to '${paymentStatus}'. Allowed: ${allowed.join(', ') || 'none'}`
-      );
-    }
-
-    rental.payment_status = paymentStatus;
-    await this.rentalsRepository.save(rental);
-
-    if (paymentStatus === 'paid' && rental.vehicle_id) {
-      await this.vehiclesRepository.update(rental.vehicle_id, { status: 'Available' });
-    }
-
-    return {
-      success: true,
-      message: 'Payment status updated successfully',
-      data: rental,
-    };
-  }
-
   async exportData(query: RentalExportDto) {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration', 'deposit', 'paymentStatus'];
+      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration'];
 
     const qb = this.rentalsRepository
       .createQueryBuilder('r')
@@ -476,14 +327,7 @@ export class RentalsService {
       vehiclePlate: (r) => r.vehicle?.license_plate || '-',
       rentalPeriod: (r) => `${r.start_date} to ${r.end_date}`,
       duration: (r) => String(r.total_duration) || '-',
-      deposit: (r) => `Rp ${Number(r.deposit_amount).toLocaleString('id-ID')}`,
-      paymentStatus: (r) => r.payment_status || '-',
       dailyRate: (r) => `Rp ${Number(r.daily_rate).toLocaleString('id-ID')}`,
-      totalDailyRate: (r) => `Rp ${Number(r.total_daily_rate).toLocaleString('id-ID')}`,
-      securityDeposit: (r) => `Rp ${Number(r.security_deposit).toLocaleString('id-ID')}`,
-      serviceFee: (r) => `Rp ${Number(r.service_fee).toLocaleString('id-ID')}`,
-      totalRevenue: (r) => `Rp ${Number(r.total_revenue).toLocaleString('id-ID')}`,
-      methodPayment: (r) => r.method_payment || '-',
     };
 
     const headerLabels: Record<string, string> = {
@@ -494,14 +338,7 @@ export class RentalsService {
       vehiclePlate: 'Vehicle Plate',
       rentalPeriod: 'Rental Period',
       duration: 'Duration (Days)',
-      deposit: 'Deposit',
-      paymentStatus: 'Payment Status',
       dailyRate: 'Daily Rate',
-      totalDailyRate: 'Total Daily Rate',
-      securityDeposit: 'Security Deposit',
-      serviceFee: 'Service Fee',
-      totalRevenue: 'Total Revenue',
-      methodPayment: 'Payment Method',
     };
 
     const activeColumns = selectedColumns.filter((c) => columnMap[c]);
@@ -633,50 +470,16 @@ export class RentalsService {
     try {
       let existingRental = await queryRunner.manager.findOne(Rental, {
         where: { id: rentalId },
-        relations: { finances: true },
       });
 
       if (!existingRental && /^[0-9a-f-]{36}$/i.test(rentalId)) {
         existingRental = await queryRunner.manager.findOne(Rental, {
           where: { id: rentalId },
-          relations: { finances: true },
         });
       }
 
       if (!existingRental) {
         throw new NotFoundException('Rental not found');
-      }
-
-      if (existingRental.method_payment === 'Saldo' && Number(existingRental.saldo_deducted) > 0) {
-        const saldo = await queryRunner.manager.findOne(DriverSaldo, {
-          where: { driver_id: existingRental.driver_id },
-        });
-
-        if (saldo) {
-          const balanceBefore = Number(saldo.balance);
-          const balanceAfter = balanceBefore + Number(existingRental.saldo_deducted);
-
-          saldo.balance = balanceAfter;
-          await queryRunner.manager.save(saldo);
-
-          const tx = queryRunner.manager.create(SaldoTransaction, {
-            driver_id: existingRental.driver_id,
-            driver_saldo_id: saldo.id,
-            type: 'refund',
-            amount: Number(existingRental.saldo_deducted),
-            balance_before: balanceBefore,
-            balance_after: balanceAfter,
-            reference_id: existingRental.id,
-            notes: `Refund otomatis karena rental ${existingRental.rental_number} dihapus`,
-          });
-          await queryRunner.manager.save(tx);
-        }
-      }
-
-      if (existingRental.finances && existingRental.finances.length > 0) {
-        for (const finance of existingRental.finances) {
-          await queryRunner.manager.delete(Finance, finance.id);
-        }
       }
 
       if (existingRental.vehicle_id) {

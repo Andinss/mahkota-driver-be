@@ -273,35 +273,34 @@ export class FinancesService {
           notes: `Saldo bertambah dari finance ${finance.reference_number}`,
         });
         await queryRunner.manager.save(tx);
-      }
+      } else if (finance.payment_method === 'saldo' && Number(finance.amount_received) > 0 && finance.driver_id) {
+        const saldo = await this.findSaldoForUpdate(queryRunner, finance.driver_id);
 
-      if (rental_ids && rental_ids.length > 0) {
-        for (const rentalId of rental_ids) {
-          const rental = await queryRunner.manager.findOne(Rental, {
-            where: { id: rentalId },
-          });
-          if (rental) {
-            const totalRevenue = Number(rental.total_revenue);
-            const paidFinances = await queryRunner.manager
-              .createQueryBuilder(Finance, 'f')
-              .leftJoin('f.rentals', 'r')
-              .where('r.id = :rentalId', { rentalId })
-              .select('COALESCE(SUM(f.amount_received), 0)', 'total')
-              .getRawOne();
-            const totalPaid = Number(paidFinances?.total || 0);
-            let newStatus = rental.payment_status;
-            if (totalPaid >= totalRevenue) {
-              newStatus = 'paid';
-            } else if (totalPaid > 0) {
-              newStatus = 'partial';
-            } else {
-              newStatus = 'unpaid';
-            }
-            if (newStatus !== rental.payment_status) {
-              await queryRunner.manager.update(Rental, rentalId, { payment_status: newStatus });
-            }
-          }
+        const balanceBefore = saldo ? Number(saldo.balance) : 0;
+        const balanceAfter = balanceBefore - Number(finance.amount_received);
+
+        if (balanceAfter < 0) {
+          throw new BadRequestException(
+            `Saldo driver tidak mencukupi. Saldo saat ini: Rp ${balanceBefore.toLocaleString('id-ID')}, diperlukan: Rp ${Number(finance.amount_received).toLocaleString('id-ID')}`,
+          );
         }
+
+        if (saldo) {
+          saldo.balance = balanceAfter;
+          await queryRunner.manager.save(saldo);
+        }
+
+        const tx = queryRunner.manager.create(SaldoTransaction, {
+          driver_id: finance.driver_id,
+          type: 'rental_payment',
+          amount: Number(finance.amount_received),
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference_id: finance.id,
+          reference_number: finance.reference_number,
+          notes: `Saldo berkurang dari finance ${finance.reference_number}`,
+        });
+        await queryRunner.manager.save(tx);
       }
 
       await queryRunner.commitTransaction();
@@ -320,36 +319,6 @@ export class FinancesService {
       throw new InternalServerErrorException('Failed to create finance');
     } finally {
       await queryRunner.release();
-    }
-  }
-
-  private async updateRentalPaymentStatus(rentalId: string): Promise<void> {
-    const rentalRes = await this.rentalsService.findById(rentalId);
-    const rental = rentalRes.data;
-    if (!rental) return;
-
-    const totalRevenue = Number(rental.total_revenue);
-
-    const paidFinances = await this.financesRepository
-      .createQueryBuilder('f')
-      .leftJoin('f.rentals', 'r')
-      .where('r.id = :rentalId', { rentalId })
-      .select('COALESCE(SUM(f.amount_received), 0)', 'total')
-      .getRawOne();
-
-    const totalPaid = Number(paidFinances?.total || 0);
-
-    let newStatus: string;
-    if (totalPaid >= totalRevenue) {
-      newStatus = 'paid';
-    } else if (totalPaid > 0) {
-      newStatus = 'partial';
-    } else {
-      newStatus = 'unpaid';
-    }
-
-    if (newStatus !== rental.payment_status) {
-      await this.rentalsService.updatePaymentStatus(rentalId, newStatus);
     }
   }
 
@@ -391,11 +360,6 @@ export class FinancesService {
       }
     }
 
-    const allRentalIdsToRecalc = new Set([...oldRentalIds, ...(rental_ids || [])]);
-    for (const rentalId of allRentalIdsToRecalc) {
-      await this.updateRentalPaymentStatus(rentalId);
-    }
-
     const finance = await this.findRawById(id);
 
     return {
@@ -409,7 +373,7 @@ export class FinancesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['reference_number', 'payer', 'amount_received', 'payment_date', 'status', 'payment_method', 'finance_type'];
+      : ['reference_number', 'payer', 'amount_received', 'deposit_amount', 'payment_date', 'status', 'payment_method'];
 
     const qb = this.financesRepository
       .createQueryBuilder('f')
@@ -441,10 +405,10 @@ export class FinancesService {
       reference_number: (f) => f.reference_number || '-',
       payer: (f) => f.payer || '-',
       amount_received: (f) => `Rp ${Number(f.amount_received).toLocaleString('id-ID')}`,
+      deposit_amount: (f) => `Rp ${Number(f.deposit_amount).toLocaleString('id-ID')}`,
       payment_date: (f) => f.payment_date ? new Date(f.payment_date).toLocaleDateString('id-ID') : '-',
-      status: (f) => f.is_active ? 'Active' : 'Inactive',
+      status: (f) => f.finance_type || '-',
       payment_method: (f) => f.payment_method || '-',
-      finance_type: (f) => f.finance_type || '-',
       driverName: (f) => f.driver ? `${f.driver.first_name} ${f.driver.last_name}`.trim() : '-',
       notes: (f) => f.notes || '-',
       id: (f) => f.id || '-',
@@ -454,10 +418,10 @@ export class FinancesService {
       reference_number: 'Reference Number',
       payer: 'Payer',
       amount_received: 'Amount Received',
+      deposit_amount: 'Deposit Amount',
       payment_date: 'Payment Date',
       status: 'Status',
       payment_method: 'Payment Method',
-      finance_type: 'Finance Type',
       driverName: 'Driver Name',
       notes: 'Notes',
       id: 'Finance ID',
@@ -652,37 +616,6 @@ export class FinancesService {
       }
 
       await queryRunner.manager.delete(Finance, employid);
-
-      for (const rentalId of linkedRentalIds) {
-        const rental = await queryRunner.manager.findOne(Rental, {
-          where: { id: rentalId },
-        });
-        if (rental) {
-          const totalRevenue = Number(rental.total_revenue);
-
-          const paidFinances = await queryRunner.manager
-            .createQueryBuilder(Finance, 'f')
-            .leftJoin('f.rentals', 'r')
-            .where('r.id = :rentalId', { rentalId })
-            .select('COALESCE(SUM(f.amount_received), 0)', 'total')
-            .getRawOne();
-
-          const totalPaid = Number(paidFinances?.total || 0);
-
-          let newStatus = rental.payment_status;
-          if (totalPaid >= totalRevenue) {
-            newStatus = 'paid';
-          } else if (totalPaid > 0) {
-            newStatus = 'partial';
-          } else {
-            newStatus = 'unpaid';
-          }
-
-          if (newStatus !== rental.payment_status) {
-            await queryRunner.manager.update(Rental, rentalId, { payment_status: newStatus });
-          }
-        }
-      }
 
       await queryRunner.commitTransaction();
 

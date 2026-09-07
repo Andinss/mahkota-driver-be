@@ -17,12 +17,20 @@ export class UpdateFinanceDto {
   reference_number?: string;
 
   @IsOptional()
-  @IsEnum(['cash', 'transfer', 'e-wallet'])
+  @IsEnum(['cash', 'transfer', 'e-wallet', 'saldo'])
   payment_method?: string;
 
   @IsOptional()
   @IsString()
   amount_received?: string;
+
+  @IsOptional()
+  @IsString()
+  deposit_amount?: string;
+
+  @IsOptional()
+  @IsEnum(['paid', 'unpaid', 'pending'])
+  finance_type?: string;
 
   @IsOptional()
   @IsString()
