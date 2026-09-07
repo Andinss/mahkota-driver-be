@@ -19,7 +19,7 @@ export class FinanceQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsEnum(['cash', 'transfer', 'e-wallet'])
+  @IsEnum(['cash', 'transfer', 'e-wallet', 'saldo'])
   payment_method?: string;
 
   @IsOptional()

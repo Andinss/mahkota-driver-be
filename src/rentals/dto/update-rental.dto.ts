@@ -41,42 +41,8 @@ export class UpdateRentalDto {
   daily_rate!: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  deposit_amount!: number;
-
-  @IsOptional()
-  @IsEnum(['Bank', 'Cash', 'E Wallet'])
-  method_payment!: string;
-
-  @IsOptional()
   @IsString()
   document_contract?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  total_daily_rate!: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  security_deposit!: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  service_fee!: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  total_revenue!: number;
 
   @IsOptional()
   @IsEnum(['harian', 'mingguan', 'bulanan', 'tahunan'])
@@ -85,8 +51,4 @@ export class UpdateRentalDto {
   @IsOptional()
   @IsEnum(['lepas kunci', 'pakai supir'])
   rental_service!: string;
-
-  @IsOptional()
-  @IsEnum(['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'])
-  payment_status!: string;
 }

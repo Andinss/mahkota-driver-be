@@ -48,32 +48,8 @@ export class Rental {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   daily_rate!: number;
 
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  deposit_amount!: number;
-
-  @Column({
-    type: 'enum',
-    enum: ['Bank', 'Cash', 'E Wallet', 'Saldo'],
-  })
-  method_payment!: string;
-
-  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
-  saldo_deducted!: number;
-
   @Column({ type: 'varchar', length: 255, nullable: true })
   document_contract!: string;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  total_daily_rate!: number;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  security_deposit!: number;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  service_fee!: number;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  total_revenue!: number;
 
   @Column({
     type: 'enum',
@@ -86,13 +62,6 @@ export class Rental {
     enum: ['lepas kunci', 'pakai supir'],
   })
   rental_service!: string;
-
-  @Column({
-    type: 'enum',
-    enum: ['paid', 'late', 'pending_confirmation', 'partial', 'unpaid'],
-    default: 'unpaid',
-  })
-  payment_status!: string;
 
   @ManyToMany(() => Finance, (finance) => finance.rentals)
   finances!: Finance[];

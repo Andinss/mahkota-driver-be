@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GpsLocation } from './entities/gps-location.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
+import { Geofence } from './entities/geofence.entity';
+import { Notification } from './entities/notification.entity';
 import { UpdateGpsDto } from './dto/update-gps.dto';
 import { GpsQueryDto } from './dto/gps-query.dto';
 
@@ -48,6 +50,10 @@ export class MonitoringService {
     private readonly gpsRepository: Repository<GpsLocation>,
     @InjectRepository(Vehicle)
     private readonly vehicleRepository: Repository<Vehicle>,
+    @InjectRepository(Geofence)
+    private readonly geofenceRepository: Repository<Geofence>,
+    @InjectRepository(Notification)
+    private readonly notifRepository: Repository<Notification>,
   ) {}
 
   async getTasks() {
@@ -261,6 +267,41 @@ export class MonitoringService {
       });
     }
 
+    // Check geofence violation
+    const { inside, violatedGeofence } = await this.isPointInsideAnyGeofence(
+      dto.latitude,
+      dto.longitude,
+    );
+
+    if (!inside) {
+      // Get vehicle info
+      const vehicle = await this.vehicleRepository.findOne({
+        where: { id: dto.vehicle_id },
+      });
+
+      // Update status to emergency if outside geofence
+      location.status = 'emergency';
+      await this.gpsRepository.save(location);
+
+      // Create notification for geofence violation
+      const notif = this.notifRepository.create({
+        type: 'geofence_violation',
+        title: `Geofence Violation: ${vehicle ? `${vehicle.merk} ${vehicle.model}` : 'Unknown Vehicle'}`,
+        message: `Vehicle ${vehicle?.license_plate || 'Unknown'} has exited the operational area "${violatedGeofence?.name || 'Unknown Zone'}" at coordinates ${dto.latitude.toFixed(6)}, ${dto.longitude.toFixed(6)}. Immediate action required.`,
+        vehicle_id: dto.vehicle_id,
+        status: 'unread',
+        is_read: false,
+        metadata: {
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          geofence_name: violatedGeofence?.name,
+          geofence_id: violatedGeofence?.id,
+          speed: dto.speed,
+        },
+      });
+      await this.notifRepository.save(notif);
+    }
+
     return {
       success: true,
       message: 'GPS location updated successfully',
@@ -274,6 +315,7 @@ export class MonitoringService {
         status: saved.status,
         engine_status: saved.engine_status,
         recorded_at: saved.recorded_at,
+        geofence_status: inside ? 'inside' : 'outside',
       },
     };
   }
@@ -334,5 +376,42 @@ export class MonitoringService {
         engine_status: updated?.engine_status || engineStatus,
       },
     };
+  }
+
+  private async isPointInsideAnyGeofence(
+    lat: number,
+    lng: number,
+  ): Promise<{ inside: boolean; violatedGeofence: Geofence | null }> {
+    const geofences = await this.geofenceRepository.find({
+      where: { is_active: true },
+    });
+
+    if (geofences.length === 0) {
+      return { inside: true, violatedGeofence: null };
+    }
+
+    const R = 6371000;
+    for (const g of geofences) {
+      const dLat = this.toRad(lat - Number(g.center_lat));
+      const dLng = this.toRad(lng - Number(g.center_lng));
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(this.toRad(Number(g.center_lat))) *
+          Math.cos(this.toRad(lat)) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      if (distance <= g.radius) {
+        return { inside: true, violatedGeofence: null };
+      }
+    }
+
+    return { inside: false, violatedGeofence: geofences[0] };
+  }
+
+  private toRad(deg: number): number {
+    return deg * (Math.PI / 180);
   }
 }

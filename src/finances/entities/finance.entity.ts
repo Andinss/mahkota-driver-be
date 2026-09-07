@@ -33,6 +33,9 @@ export class Finance {
   @Column('decimal', { precision: 14, scale: 2, transformer: { to: (value: number) => value, from: (value: string | null) => value ? parseFloat(value) : 0 } })
   amount_received!: number;
 
+  @Column('decimal', { precision: 14, scale: 2, default: 0, transformer: { to: (value: number) => value, from: (value: string | null) => value ? parseFloat(value) : 0 } })
+  deposit_amount!: number;
+
   @Column('varchar', { length: 500 })
   notes!: string;
 
@@ -48,8 +51,8 @@ export class Finance {
 
   @Column({
     type: 'enum',
-    enum: ['manual', 'rental', 'late_payment'],
-    default: 'manual',
+    enum: ['paid', 'unpaid', 'pending'],
+    default: 'pending',
   })
   finance_type!: string;
 
