@@ -37,6 +37,12 @@ export class FinancesController {
     return this.financesService.findAll(query);
   }
 
+  @Get('monthly-summary')
+  @Permissions('finance.read')
+  getMonthlySummary(@Query('year') year?: string) {
+    return this.financesService.getMonthlySummary(year ? Number(year) : undefined);
+  }
+
   @Get('export')
   @Permissions('finance.read')
   async export(@Query() query: FinanceExportDto) {

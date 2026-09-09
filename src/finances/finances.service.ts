@@ -211,6 +211,39 @@ export class FinancesService {
     };
   }
 
+  async getMonthlySummary(year?: number) {
+    const currentYear = year || new Date().getFullYear();
+
+    const rows = await this.financesRepository
+      .createQueryBuilder('f')
+      .select('EXTRACT(MONTH FROM f.payment_date)', 'month')
+      .addSelect('COALESCE(SUM(f.amount_received), 0)', 'total')
+      .addSelect('COUNT(f.id)', 'count')
+      .where('EXTRACT(YEAR FROM f.payment_date) = :year', { year: currentYear })
+      .groupBy('EXTRACT(MONTH FROM f.payment_date)')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    const monthlyData = Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1;
+      const found = rows.find((r) => Number(r.month) === month);
+      return {
+        month,
+        total: found ? Number(found.total) : 0,
+        count: found ? Number(found.count) : 0,
+      };
+    });
+
+    return {
+      success: true,
+      message: 'Monthly finance summary retrieved successfully',
+      data: {
+        year: currentYear,
+        months: monthlyData,
+      },
+    };
+  }
+
   async create(data: AddFinanceDto) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
