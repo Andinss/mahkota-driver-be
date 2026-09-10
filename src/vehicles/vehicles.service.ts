@@ -253,7 +253,7 @@ export class VehiclesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'year', 'licensePlate', 'dailyRate', 'status'];
+      : ['name', 'year', 'licensePlate', 'dailyRate', 'pricingCategory', 'status'];
 
     const qb = this.vehiclesRepository
       .createQueryBuilder('v');
@@ -280,6 +280,7 @@ export class VehiclesService {
       year: (v) => v.launching_year ? new Date(v.launching_year).getFullYear().toString() : '-',
       licensePlate: (v) => v.license_plate || '-',
       dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
+      pricingCategory: (v) => v.pricing_category || '-',
       status: (v) => v.status || '-',
       color: (v) => v.color || '-',
       vinNumber: (v) => v.vin_number || '-',
@@ -292,6 +293,7 @@ export class VehiclesService {
       year: 'Year',
       licensePlate: 'License Plate',
       dailyRate: 'Daily Rate',
+      pricingCategory: 'Pricing Category',
       status: 'Status',
       color: 'Color',
       vinNumber: 'VIN Number',
