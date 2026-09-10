@@ -127,6 +127,7 @@ const vehiclesData = [
     engine_number: 'EN-TOYOTA-001',
     engine_status: 'on',
     daily_rate: 350000,
+    pricing_category: 'Reguler',
   },
   {
     merk: 'Honda', model: 'Brio',
@@ -137,6 +138,7 @@ const vehiclesData = [
     engine_number: 'EN-HONDA-001',
     engine_status: 'off',
     daily_rate: 300000,
+    pricing_category: 'Reguler',
   },
   {
     merk: 'Toyota', model: 'Innova',
@@ -147,6 +149,7 @@ const vehiclesData = [
     engine_number: 'EN-TOYOTA-002',
     engine_status: 'off',
     daily_rate: 500000,
+    pricing_category: 'Premium',
   },
   {
     merk: 'Daihatsu', model: 'Xenia',
@@ -157,6 +160,7 @@ const vehiclesData = [
     engine_number: 'EN-DAIHATSU-001',
     engine_status: 'on',
     daily_rate: 280000,
+    pricing_category: 'Reguler',
   },
   {
     merk: 'Suzuki', model: 'Ertiga',
@@ -167,6 +171,7 @@ const vehiclesData = [
     engine_number: 'EN-SUZUKI-001',
     engine_status: 'off',
     daily_rate: 320000,
+    pricing_category: 'Reguler',
   },
   {
     merk: 'Mitsubishi', model: 'Xpander',
@@ -177,6 +182,7 @@ const vehiclesData = [
     engine_number: 'EN-MITSUBISHI-001',
     engine_status: 'on',
     daily_rate: 400000,
+    pricing_category: 'Premium',
   },
   {
     merk: 'Toyota', model: 'Camry',
@@ -187,6 +193,7 @@ const vehiclesData = [
     engine_number: 'EN-TOYOTA-003',
     engine_status: 'off',
     daily_rate: 600000,
+    pricing_category: 'Premium',
   },
 ];
 

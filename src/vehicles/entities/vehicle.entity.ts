@@ -52,6 +52,13 @@ export class Vehicle {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   daily_rate!: number;
 
+  @Column({
+    type: 'enum',
+    enum: ['Reguler', 'Premium'],
+    default: 'Reguler',
+  })
+  pricing_category!: string;
+
   //default
   @CreateDateColumn({ type: 'timestamp' })
   created_at!: Date;

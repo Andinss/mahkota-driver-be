@@ -42,4 +42,7 @@ export class AddVehicleDto {
   @Min(0)
   @Type(() => Number)
   daily_rate!: number;
+
+  @IsEnum(['Reguler', 'Premium'])
+  pricing_category!: string;
 }
