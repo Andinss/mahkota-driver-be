@@ -6,10 +6,12 @@ import {
   UpdateDateColumn,
   ManyToOne,
   OneToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { DriverSaldo } from '../../saldo/entities/driver-saldo.entity';
+import { Rental } from '../../rentals/entities/rental.entity';
 
 @Entity('drivers')
 export class Driver {
@@ -40,6 +42,9 @@ export class Driver {
 
   @Column({ type: 'varchar', length: 100, unique: true })
   email!: string;
+
+  @Column({ type: 'varchar', length: 50, default: 'Indonesian (WNI)' })
+  citizenship!: string;
   //step 2
 
   @Column({ type: 'varchar', length: 20 })
@@ -53,6 +58,30 @@ export class Driver {
 
   @Column({ type: 'text' })
   permanent_address!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  province!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  province_name!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  city!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  city_name!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  district!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  district_name!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  subdistrict!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  subdistrict_name!: string;
 
   @Column({ type: 'boolean', default: true })
   ready_sign_contract!: boolean;
@@ -82,6 +111,9 @@ export class Driver {
 
   @OneToOne(() => DriverSaldo, (saldo) => saldo.driver)
   saldo!: DriverSaldo;
+
+  @OneToMany(() => Rental, (rental) => rental.driver)
+  rentals!: Rental[];
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

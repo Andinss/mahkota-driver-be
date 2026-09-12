@@ -7,6 +7,7 @@ import {
   Req,
   Put,
   Delete,
+  Patch,
   StreamableFile,
   Param,
   Query,
@@ -17,6 +18,8 @@ import { FinancesService } from './finances.service';
 import { AddFinanceDto } from './dto/add-finance.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceExportDto } from './dto/finance-export.dto';
+import { CreateFinancePaymentDto } from './dto/create-finance-payment.dto';
+import { UpdateFinancePaymentDto } from './dto/update-finance-payment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -40,7 +43,9 @@ export class FinancesController {
   @Get('monthly-summary')
   @Permissions('finance.read')
   getMonthlySummary(@Query('year') year?: string) {
-    return this.financesService.getMonthlySummary(year ? Number(year) : undefined);
+    return this.financesService.getMonthlySummary(
+      year ? Number(year) : undefined,
+    );
   }
 
   @Get('export')
@@ -62,10 +67,92 @@ export class FinancesController {
     return this.financesService.getSummary();
   }
 
+  @Get('driver/:driverId/summary')
+  @Permissions('finance.read')
+  getDriverSummary(@Param('driverId') driverId: string) {
+    return this.financesService.getDriverSummary(driverId);
+  }
+
   @Get('detail/:id')
   @Permissions('finance.read')
   findDetail(@Param('id') id: string) {
     return this.financesService.findDetailById(id);
+  }
+
+  @Get(':id/payments')
+  @Permissions('finance.read')
+  listPayments(@Param('id') id: string) {
+    return this.financesService.listPayments(id);
+  }
+
+  @Post(':id/payments')
+  @Permissions('finance.create')
+  async createPayment(
+    @Param('id') id: string,
+    @Body() dto: CreateFinancePaymentDto,
+    @Req() req: any,
+  ) {
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.createPayment(id, dto);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_FINANCE_PAYMENT',
+        target: `finance/${id}`,
+        details: `Recorded payment Rp ${dto.amount} for finance ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
+  }
+
+  @Patch(':financeId/payments/:paymentId')
+  @Permissions('finance.update')
+  async updatePaymentStatus(
+    @Param('financeId') financeId: string,
+    @Param('paymentId') paymentId: string,
+    @Body() dto: UpdateFinancePaymentDto,
+    @Req() req: any,
+  ) {
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.updatePaymentStatus(
+      financeId,
+      paymentId,
+      dto,
+    );
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'VERIFY_FINANCE_PAYMENT',
+        target: `finance/${financeId}/payments/${paymentId}`,
+        details: `Updated payment status to ${dto.status}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
+  }
+
+  @Patch(':id/cancel')
+  @Permissions('finance.update')
+  async cancel(@Param('id') id: string, @Req() req: any) {
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.cancel(id);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CANCEL_FINANCE',
+        target: `finance/${id}`,
+        details: `Cancelled finance ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
   }
 
   @Get(':id')
@@ -80,33 +167,43 @@ export class FinancesController {
     const meta = extractRequestMeta(req);
     const result = await this.financesService.create(addFinanceDto);
     const finance = result?.data || result;
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'CREATE_FINANCE',
-      target: `finance/${(finance as any)?.id || ''}`,
-      details: `Created finance ${addFinanceDto.reference_number}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_FINANCE',
+        target: `finance/${(finance as any)?.id || ''}`,
+        details: `Created finance ${addFinanceDto.reference_number}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
   @Put('update/:id')
   @Permissions('finance.update')
-  async update(@Body() updateFinanceDto: Partial<AddFinanceDto>, @Req() req: any) {
+  async update(
+    @Body() updateFinanceDto: Partial<AddFinanceDto>,
+    @Req() req: any,
+  ) {
     const financeId = req.params.id;
     const meta = extractRequestMeta(req);
-    const result = await this.financesService.update(financeId, updateFinanceDto);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'UPDATE_FINANCE',
-      target: `finance/${financeId}`,
-      details: `Updated finance ${financeId}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    const result = await this.financesService.update(
+      financeId,
+      updateFinanceDto,
+    );
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'UPDATE_FINANCE',
+        target: `finance/${financeId}`,
+        details: `Updated finance ${financeId}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -116,15 +213,17 @@ export class FinancesController {
     const financeId = req.params.employid;
     const meta = extractRequestMeta(req);
     const result = await this.financesService.delete(financeId);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'DELETE_FINANCE',
-      target: `finance/${financeId}`,
-      details: `Deleted finance ${financeId}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'DELETE_FINANCE',
+        target: `finance/${financeId}`,
+        details: `Deleted finance ${financeId}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 }

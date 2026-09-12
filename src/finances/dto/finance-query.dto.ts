@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsNumber, IsEnum, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsEnum,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class FinanceQueryDto {
@@ -29,4 +36,12 @@ export class FinanceQueryDto {
   @IsOptional()
   @IsString()
   end_date?: string;
+
+  @IsOptional()
+  @IsUUID()
+  driver_id?: string;
+
+  @IsOptional()
+  @IsEnum(['unpaid', 'pending', 'partially_paid', 'paid', 'cancelled'])
+  status?: string;
 }
