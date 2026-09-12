@@ -7,6 +7,7 @@ import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { Driver } from './drivers/entities/driver.entity';
 import { Rental } from './rentals/entities/rental.entity';
 import { Finance } from './finances/entities/finance.entity';
+import { FinancePayment } from './finances/entities/finance-payment.entity';
 import { LatePayment } from './late-payments/entities/late-payment.entity';
 import { GpsLocation } from './monitoring/entities/gps-location.entity';
 import { Setting } from './settings/entities/setting.entity';
@@ -206,6 +207,11 @@ const driversData = [
     phone: '081234567890', email: 'budi.santoso@example.com',
     emergency_contact: '081234567891', emergency_email: 'emergency.budi@example.com',
     house_type: 'Owned', permanent_address: 'Jl. Sudirman No. 10, Jakarta Selatan',
+    citizenship: 'Indonesian (WNI)',
+    province: '31', province_name: 'DKI Jakarta',
+    city: '3171', city_name: 'Kota Jakarta Selatan',
+    district: '3171060', district_name: 'Kebayoran Baru',
+    subdistrict: '3171060001', subdistrict_name: 'Gandaria Utara',
     ready_sign_contract: true, willing_to_be_survey: true,
   },
   {
@@ -215,6 +221,11 @@ const driversData = [
     phone: '081234567892', email: 'andi.pratama@example.com',
     emergency_contact: '081234567893', emergency_email: 'emergency.andi@example.com',
     house_type: 'Rented', permanent_address: 'Jl. Gatot Subroto No. 25, Jakarta Pusat',
+    citizenship: 'Indonesian (WNI)',
+    province: '31', province_name: 'DKI Jakarta',
+    city: '3173', city_name: 'Kota Jakarta Pusat',
+    district: '3173020', district_name: 'Menteng',
+    subdistrict: '3173020004', subdistrict_name: 'Gondangdia',
     ready_sign_contract: true, willing_to_be_survey: true,
   },
   {
@@ -224,6 +235,11 @@ const driversData = [
     phone: '081234567894', email: 'siti.rahayu@example.com',
     emergency_contact: '081234567895', emergency_email: 'emergency.siti@example.com',
     house_type: 'Owned', permanent_address: 'Jl. Thamrin No. 30, Jakarta Pusat',
+    citizenship: 'Indonesian (WNI)',
+    province: '31', province_name: 'DKI Jakarta',
+    city: '3173', city_name: 'Kota Jakarta Pusat',
+    district: '3173030', district_name: 'Senen',
+    subdistrict: '3173030003', subdistrict_name: 'Kramat',
     ready_sign_contract: true, willing_to_be_survey: true,
   },
   {
@@ -233,6 +249,11 @@ const driversData = [
     phone: '081234567896', email: 'dedi.kurniawan@example.com',
     emergency_contact: '081234567897', emergency_email: 'emergency.dedi@example.com',
     house_type: 'Rented', permanent_address: 'Jl. Kuningan No. 15, Jakarta Selatan',
+    citizenship: 'Indonesian (WNI)',
+    province: '31', province_name: 'DKI Jakarta',
+    city: '3171', city_name: 'Kota Jakarta Selatan',
+    district: '3171090', district_name: 'Tebet',
+    subdistrict: '3171090004', subdistrict_name: 'Kebon Baru',
     ready_sign_contract: true, willing_to_be_survey: false,
   },
   {
@@ -242,6 +263,11 @@ const driversData = [
     phone: '081234567898', email: 'rina.wulandari@example.com',
     emergency_contact: '081234567899', emergency_email: 'emergency.rina@example.com',
     house_type: 'Owned', permanent_address: 'Jl. Kemang No. 8, Jakarta Selatan',
+    citizenship: 'Indonesian (WNI)',
+    province: '31', province_name: 'DKI Jakarta',
+    city: '3171', city_name: 'Kota Jakarta Selatan',
+    district: '3171060', district_name: 'Kebayoran Baru',
+    subdistrict: '3171060004', subdistrict_name: 'Petogogan',
     ready_sign_contract: true, willing_to_be_survey: true,
   },
 ];
@@ -618,10 +644,14 @@ async function seed() {
   ];
 
   const createdFinances: Finance[] = [];
+  const financePaymentRepository = app.get<Repository<FinancePayment>>(getRepositoryToken(FinancePayment));
   for (const fData of financesData) {
     const { rentals: rentalList, ...financeFields } = fData;
+    const totalAmount = Number((financeFields as any).amount_received) || 0;
     const finance = financeRepository.create({
       ...financeFields,
+      total_amount: totalAmount,
+      status: (financeFields as any).finance_type === 'pending' ? 'pending' : 'paid',
       payment_date: new Date(fData.payment_date),
     });
     if (rentalList && rentalList.length > 0) {
@@ -629,6 +659,21 @@ async function seed() {
     }
     const saved = await financeRepository.save(finance);
     createdFinances.push(saved);
+
+    if (totalAmount > 0) {
+      const payment = financePaymentRepository.create({
+        finance_id: saved.id,
+        driver_id: (financeFields as any).driver.id,
+        amount: totalAmount,
+        payment_method: (financeFields as any).payment_method,
+        payment_date: new Date(fData.payment_date),
+        reference_number: (financeFields as any).reference_number,
+        notes: 'Seed: pembayaran awal lengkap',
+        status: (financeFields as any).finance_type === 'pending' ? 'pending' : 'paid',
+      });
+      await financePaymentRepository.save(payment);
+    }
+
     console.log(`  Created finance: ${saved.reference_number} Rp ${saved.amount_received.toLocaleString('id-ID')} (${saved.finance_type})`);
   }
 

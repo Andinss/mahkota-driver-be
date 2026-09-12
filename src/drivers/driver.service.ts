@@ -33,6 +33,8 @@ export class DriverService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
       .leftJoinAndSelect('d.saldo', 'saldo')
+      .leftJoinAndSelect('d.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'vehicle')
       .orderBy('d.created_at', 'DESC');
 
     if (query?.search) {
@@ -65,7 +67,7 @@ export class DriverService {
   async findById(id: string) {
     const driver = await this.driversRepository.findOne({
       where: { id },
-      relations: { created_by: true },
+      relations: { created_by: true, rentals: { vehicle: true } },
     });
 
     if (!driver) {
@@ -82,7 +84,7 @@ export class DriverService {
   async findDetailById(id: string) {
     const driver = await this.driversRepository.findOne({
       where: { id },
-      relations: { created_by: true },
+      relations: { created_by: true, rentals: { vehicle: true } },
     });
 
     if (!driver) {

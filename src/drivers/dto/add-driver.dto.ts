@@ -35,6 +35,10 @@ export class AddDriverDto {
   @IsEmail()
   email!: string;
 
+  @IsOptional()
+  @IsString()
+  citizenship?: string;
+
   //step 2
 
   @IsString()
@@ -48,6 +52,38 @@ export class AddDriverDto {
 
   @IsString()
   permanent_address!: string;
+
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  province_name?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  city_name?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  district_name?: string;
+
+  @IsOptional()
+  @IsString()
+  subdistrict?: string;
+
+  @IsOptional()
+  @IsString()
+  subdistrict_name?: string;
 
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
