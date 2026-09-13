@@ -21,4 +21,8 @@ export class VehicleQueryDto {
   @IsOptional()
   @IsEnum(['Available', 'Maintenance', 'Service', 'Reserved', 'rented', 'retrieved'])
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  vendor_id?: string;
 }

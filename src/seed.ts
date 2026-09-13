@@ -14,6 +14,7 @@ import { Setting } from './settings/entities/setting.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
 import { DriverSaldo } from './saldo/entities/driver-saldo.entity';
 import { SaldoTransaction } from './saldo/entities/saldo-transaction.entity';
+import { VendorVehicle } from './vendor-vehicle/entities/vendor-vehicle.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -32,6 +33,7 @@ const modulePermissions: Record<string, string[]> = {
   saldo: ['read', 'top_up', 'deduct', 'refund'],
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
+  vendor: ['create', 'read', 'update', 'delete'],
 };
 
 const allPermissionNames: string[] = [];
@@ -129,6 +131,7 @@ const vehiclesData = [
     engine_status: 'on',
     daily_rate: 350000,
     pricing_category: 'Reguler',
+    vendor_name: 'CV Armada Jaya',
   },
   {
     merk: 'Honda', model: 'Brio',
@@ -140,6 +143,7 @@ const vehiclesData = [
     engine_status: 'off',
     daily_rate: 300000,
     pricing_category: 'Reguler',
+    vendor_name: 'CV Armada Jaya',
   },
   {
     merk: 'Toyota', model: 'Innova',
@@ -151,6 +155,7 @@ const vehiclesData = [
     engine_status: 'off',
     daily_rate: 500000,
     pricing_category: 'Premium',
+    vendor_name: 'CV Armada Jaya',
   },
   {
     merk: 'Daihatsu', model: 'Xenia',
@@ -162,39 +167,19 @@ const vehiclesData = [
     engine_status: 'on',
     daily_rate: 280000,
     pricing_category: 'Reguler',
-  },
-  {
-    merk: 'Suzuki', model: 'Ertiga',
-    launching_year: new Date('2022-11-01'),
-    license_plate: 'B 7890 MNO',
-    vin_number: 'MHFX7788990011223',
-    color: 'Blue', status: 'rented',
-    engine_number: 'EN-SUZUKI-001',
-    engine_status: 'off',
-    daily_rate: 320000,
-    pricing_category: 'Reguler',
+    vendor_name: 'PT Sejahtera Rent',
   },
   {
     merk: 'Mitsubishi', model: 'Xpander',
     launching_year: new Date('2023-05-15'),
     license_plate: 'B 2345 PQR',
     vin_number: 'MHFX3344556677889',
-    color: 'Grey', status: 'rented',
+    color: 'Grey', status: 'Available',
     engine_number: 'EN-MITSUBISHI-001',
-    engine_status: 'on',
+    engine_status: 'off',
     daily_rate: 400000,
     pricing_category: 'Premium',
-  },
-  {
-    merk: 'Toyota', model: 'Camry',
-    launching_year: new Date('2024-01-10'),
-    license_plate: 'B 6789 STU',
-    vin_number: 'MHFX9988776655443',
-    color: 'White', status: 'Available',
-    engine_number: 'EN-TOYOTA-003',
-    engine_status: 'off',
-    daily_rate: 600000,
-    pricing_category: 'Premium',
+    vendor_name: 'PT Sejahtera Rent',
   },
 ];
 
@@ -279,11 +264,6 @@ const settingsData = [
   { key: 'company_phone', value: '+62 21 5555 0123', category: 'general', description: 'Company phone number' },
   { key: 'currency', value: 'IDR', category: 'finance', description: 'Default currency' },
   { key: 'tax_rate', value: '11', category: 'finance', description: 'Tax rate percentage' },
-  { key: 'late_fee_per_day', value: '50000', category: 'finance', description: 'Late fee per day in IDR' },
-  { key: 'max_rental_duration_days', value: '365', category: 'rental', description: 'Maximum rental duration in days' },
-  { key: 'min_deposit_percentage', value: '20', category: 'rental', description: 'Minimum deposit percentage' },
-  { key: 'auto_set_late_enabled', value: 'true', category: 'rental', description: 'Auto-set late status for overdue rentals' },
-  { key: 'gps_tracking_enabled', value: 'true', category: 'monitoring', description: 'Enable GPS tracking' },
 ];
 
 async function seed() {
@@ -302,6 +282,7 @@ async function seed() {
   const auditRepository = app.get<Repository<AuditLog>>(getRepositoryToken(AuditLog));
   const driverSaldoRepository = app.get<Repository<DriverSaldo>>(getRepositoryToken(DriverSaldo));
   const saldoTransactionRepository = app.get<Repository<SaldoTransaction>>(getRepositoryToken(SaldoTransaction));
+  const vendorVehicleRepository = app.get<Repository<VendorVehicle>>(getRepositoryToken(VendorVehicle));
 
   // ═══════════════════════════════════════════════════════════
   // 1. SEED PERMISSIONS
@@ -406,18 +387,62 @@ async function seed() {
   const adminUser = createdUsers[0];
 
   // ═══════════════════════════════════════════════════════════
-  // 4. SEED VEHICLES
+  // 4. SEED VENDOR VEHICLES & VEHICLES
   // ═══════════════════════════════════════════════════════════
+  console.log('\n── Seeding Vendor Vehicles ──');
+  const vendorsData = [
+    {
+      name: 'CV Armada Jaya',
+      owner_name: 'Budi Santoso',
+      status: 'active',
+      logo: '',
+    },
+    {
+      name: 'PT Sejahtera Rent',
+      owner_name: 'Rina Wulandari',
+      status: 'active',
+      logo: '',
+    },
+    {
+      name: 'UD Barokah Motor',
+      owner_name: 'Andi Pratama',
+      status: 'inactive',
+      logo: '',
+    },
+  ];
+
+  const createdVendors: VendorVehicle[] = [];
+  for (const vData of vendorsData) {
+    let vendor = await vendorVehicleRepository.findOne({ where: { name: vData.name } });
+    if (vendor) {
+      console.log(`  Vendor already exists: ${vData.name}`);
+      createdVendors.push(vendor);
+      continue;
+    }
+    vendor = vendorVehicleRepository.create(vData);
+    vendor = await vendorVehicleRepository.save(vendor);
+    createdVendors.push(vendor);
+    console.log(`  Created vendor: ${vData.name} (${vData.owner_name})`);
+  }
+
   console.log('\n── Seeding Vehicles ──');
   const createdVehicles: Vehicle[] = [];
   for (const vData of vehiclesData) {
+    const { vendor_name, ...vehicleFields } = vData;
+    const vendorId = vendor_name
+      ? createdVendors.find((v) => v.name === vendor_name)?.id
+      : undefined;
+
     let vehicle = await vehicleRepository.findOne({ where: { license_plate: vData.license_plate } });
     if (vehicle) {
-      console.log(`  Vehicle already exists: ${vData.license_plate}`);
+      if (vehicle.vendor_id !== vendorId) {
+        await vehicleRepository.update(vehicle.id, { vendor_id: vendorId });
+        console.log(`  Updated vehicle vendor_id: ${vData.license_plate} → ${vendor_name || '-'}`);
+      }
       createdVehicles.push(vehicle);
       continue;
     }
-    vehicle = vehicleRepository.create(vData);
+    vehicle = vehicleRepository.create({ ...vehicleFields, vendor_id: vendorId });
     vehicle = await vehicleRepository.save(vehicle);
     createdVehicles.push(vehicle);
     console.log(`  Created vehicle: ${vData.license_plate} (${vData.merk} ${vData.model})`);
@@ -486,50 +511,22 @@ async function seed() {
       rental_duration: 'mingguan',
       rental_service: 'lepas kunci',
     },
-    {
-      driver: createdDrivers[4],
-      vehicle: createdVehicles[5],
-      start_date: new Date('2026-09-10'),
-      end_date: new Date('2026-10-10'),
-      total_duration: 30,
-      daily_rate: 400000,
-      rental_duration: 'bulanan',
-      rental_service: 'pakai supir',
-    },
-    {
-      driver: createdDrivers[1],
-      vehicle: createdVehicles[4],
-      start_date: new Date('2026-09-06'),
-      end_date: new Date('2026-09-07'),
-      total_duration: 1,
-      daily_rate: 320000,
-      rental_duration: 'harian',
-      rental_service: 'lepas kunci',
-    },
-    {
-      driver: createdDrivers[0],
-      vehicle: createdVehicles[2],
-      start_date: new Date('2026-08-15'),
-      end_date: new Date('2026-08-20'),
-      total_duration: 5,
-      daily_rate: 275000,
-      rental_duration: 'harian',
-      rental_service: 'lepas kunci',
-    },
-    {
-      driver: createdDrivers[2],
-      vehicle: createdVehicles[0],
-      start_date: new Date('2026-07-01'),
-      end_date: new Date('2026-07-31'),
-      total_duration: 30,
-      daily_rate: 350000,
-      rental_duration: 'bulanan',
-      rental_service: 'pakai supir',
-    },
   ];
 
   const createdRentals: Rental[] = [];
   for (const rData of rentalsData) {
+    const existing = await rentalRepository.findOne({
+      where: {
+        vehicle_id: rData.vehicle.id,
+        start_date: rData.start_date,
+        end_date: rData.end_date,
+      },
+    });
+    if (existing) {
+      console.log(`  Rental already exists: ${existing.rental_number}`);
+      createdRentals.push(existing);
+      continue;
+    }
     const rental = rentalRepository.create({
       driver_id: rData.driver.id,
       vehicle_id: rData.vehicle.id,
@@ -602,45 +599,6 @@ async function seed() {
       rentals: [createdRentals[3]],
       is_active: true,
     },
-    {
-      payment_date: new Date('2026-08-22'),
-      reference_number: 'PAY/2026/08/0005',
-      payment_method: 'e-wallet',
-      amount_received: 2500000,
-      deposit_amount: 2500000,
-      notes: 'Deposit payment for Xpander - Rina Wulandari',
-      payer: 'Rina Wulandari',
-      driver: createdDrivers[4],
-      finance_type: 'paid',
-      rentals: [createdRentals[4]],
-      is_active: true,
-    },
-    {
-      payment_date: new Date('2026-08-25'),
-      reference_number: 'PAY/2026/08/0006',
-      payment_method: 'cash',
-      amount_received: 500000,
-      deposit_amount: 0,
-      notes: 'Manual payment - office supply reimbursement',
-      payer: 'Office Admin',
-      driver: createdDrivers[0],
-      finance_type: 'pending',
-      rentals: [],
-      is_active: true,
-    },
-    {
-      payment_date: new Date('2026-08-22'),
-      reference_number: 'SALDO/' + (createdRentals[5]?.rental_number || 'RENT/006'),
-      payment_method: 'saldo',
-      amount_received: 1280000,
-      deposit_amount: 0,
-      notes: 'Pembayaran rental ' + (createdRentals[5]?.rental_number || 'RENT/006') + ' dari saldo driver',
-      payer: 'Andi Pratama',
-      driver: createdDrivers[1],
-      finance_type: 'paid',
-      rentals: [createdRentals[5]],
-      is_active: true,
-    },
   ];
 
   const createdFinances: Finance[] = [];
@@ -648,6 +606,16 @@ async function seed() {
   for (const fData of financesData) {
     const { rentals: rentalList, ...financeFields } = fData;
     const totalAmount = Number((financeFields as any).amount_received) || 0;
+
+    const existing = await financeRepository.findOne({
+      where: { reference_number: (financeFields as any).reference_number },
+    });
+    if (existing) {
+      console.log(`  Finance already exists: ${existing.reference_number}`);
+      createdFinances.push(existing);
+      continue;
+    }
+
     const finance = financeRepository.create({
       ...financeFields,
       total_amount: totalAmount,
@@ -715,6 +683,19 @@ async function seed() {
 
   for (const lpData of latePaymentsData) {
     const { rentals: rentalList, ...lpFields } = lpData;
+
+    const existing = await latePaymentRepository.findOne({
+      where: {
+        driver_id: lpData.driver.id,
+        due_date: lpData.due_date,
+        amount: lpData.amount,
+      },
+    });
+    if (existing) {
+      console.log(`  Late payment already exists: ${existing.driver_name} Rp ${existing.amount.toLocaleString('id-ID')}`);
+      continue;
+    }
+
     const latePayment = latePaymentRepository.create({
       ...lpFields,
       driver_id: lpData.driver.id,
@@ -741,11 +722,18 @@ async function seed() {
     { vehicle: createdVehicles[1], latitude: -6.1750, longitude: 106.8270, speed: 0, fuel_level: 30, status: 'idle', engine_status: 'off' },
     { vehicle: createdVehicles[2], latitude: -6.2297, longitude: 106.6891, speed: 60, fuel_level: 85, status: 'moving', engine_status: 'on' },
     { vehicle: createdVehicles[3], latitude: -6.2615, longitude: 106.8100, speed: 0, fuel_level: 45, status: 'idle', engine_status: 'off' },
-    { vehicle: createdVehicles[5], latitude: -6.1944, longitude: 106.8329, speed: 35, fuel_level: 60, status: 'moving', engine_status: 'on' },
-    { vehicle: createdVehicles[6], latitude: -6.1500, longitude: 106.8000, speed: 0, fuel_level: 90, status: 'idle', engine_status: 'off' },
+    { vehicle: createdVehicles[4], latitude: -6.1944, longitude: 106.8329, speed: 35, fuel_level: 60, status: 'moving', engine_status: 'on' },
   ];
 
   for (const gData of gpsData) {
+    const existing = await gpsRepository.findOne({
+      where: { vehicle_id: gData.vehicle.id },
+    });
+    if (existing) {
+      console.log(`  GPS already exists: ${gData.vehicle.merk} ${gData.vehicle.model}`);
+      continue;
+    }
+
     const gps = gpsRepository.create({
       vehicle_id: gData.vehicle.id,
       latitude: gData.latitude,
@@ -768,11 +756,9 @@ async function seed() {
   // 10. SEED DRIVER SALDO
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Driver Saldo ──');
-  const saldoRental = createdRentals[5];
-
   const saldoData = [
     { driver: createdDrivers[0], balance: 5000000 },
-    { driver: createdDrivers[1], balance: 1720000 },
+    { driver: createdDrivers[1], balance: 3000000 },
     { driver: createdDrivers[2], balance: 7500000 },
     { driver: createdDrivers[3], balance: 500000 },
     { driver: createdDrivers[4], balance: 2000000 },
@@ -789,7 +775,6 @@ async function seed() {
   }[] = [
     { driver: createdDrivers[0], txType: 'top_up', amount: 5000000, balanceBefore: 0, balanceAfter: 5000000, notes: 'Initial balance seed' },
     { driver: createdDrivers[1], txType: 'top_up', amount: 3000000, balanceBefore: 0, balanceAfter: 3000000, notes: 'Initial balance seed' },
-    { driver: createdDrivers[1], txType: 'rental_payment', amount: 1280000, balanceBefore: 3000000, balanceAfter: 1720000, referenceId: saldoRental?.id, notes: 'Pembayaran rental dari saldo' },
     { driver: createdDrivers[2], txType: 'top_up', amount: 7500000, balanceBefore: 0, balanceAfter: 7500000, notes: 'Initial balance seed' },
     { driver: createdDrivers[3], txType: 'refund', amount: 500000, balanceBefore: 0, balanceAfter: 500000, referenceId: createdRentals[3]?.id, notes: 'Refund ke saldo' },
     { driver: createdDrivers[4], txType: 'top_up', amount: 2000000, balanceBefore: 0, balanceAfter: 2000000, notes: 'Initial balance seed' },
@@ -817,6 +802,19 @@ async function seed() {
     const saldo = await driverSaldoRepository.findOne({
       where: { driver_id: tx.driver.id },
     });
+    const existingTx = await saldoTransactionRepository.findOne({
+      where: {
+        driver_id: tx.driver.id,
+        driver_saldo_id: saldo?.id || undefined,
+        type: tx.txType,
+        amount: tx.amount,
+        ...(tx.referenceId ? { reference_id: tx.referenceId } : {}),
+      },
+    });
+    if (existingTx) {
+      console.log(`  Saldo ${tx.txType} already exists: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')}`);
+      continue;
+    }
     const entry = saldoTransactionRepository.create({
       driver_id: tx.driver.id,
       driver_saldo_id: saldo?.id || undefined,
@@ -856,15 +854,25 @@ async function seed() {
     { username: 'admin', action: 'CREATE_RENTAL', target: `rental/${createdRentals[0]?.rental_number || 'RENT/001'}`, details: 'Created rental for Budi Santoso', status: 'success' },
     { username: 'finance1', action: 'CREATE_FINANCE', target: `finance/${createdFinances[0]?.id || ''}`, details: 'Created finance PAY/2026/08/0001', status: 'success' },
     { username: 'admin', action: 'UPDATE_RENTAL_STATUS', target: `rental/${createdRentals[1]?.rental_number || 'RENT/002'}`, details: 'Updated payment status to paid', status: 'success' },
-    { username: 'admin', action: 'LOGIN', target: 'auth/login', details: 'Admin logged in', status: 'success' },
-    { username: 'finance1', action: 'LOGIN', target: 'auth/login', details: 'Finance user logged in', status: 'success' },
   ];
 
+  let createdAuditLogs = 0;
   for (const aData of auditData) {
+    const existing = await auditRepository.findOne({
+      where: {
+        username: aData.username,
+        action: aData.action,
+        target: aData.target,
+      },
+    });
+    if (existing) {
+      continue;
+    }
     const log = auditRepository.create(aData);
     await auditRepository.save(log);
+    createdAuditLogs++;
   }
-  console.log(`  Created ${auditData.length} audit log entries`);
+  console.log(`  Created ${createdAuditLogs} audit log entries`);
 
   await app.close();
   console.log('\n═══════════════════════════════════════════════════');

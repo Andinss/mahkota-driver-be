@@ -55,4 +55,7 @@ export class UpdateVehicleDto {
   @IsOptional()
   @IsEnum(['Reguler', 'Premium'])
   pricing_category!: string;
+
+  @IsOptional()
+  vendor_id!: string;
 }
