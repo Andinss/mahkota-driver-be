@@ -4,7 +4,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { VendorVehicle } from '../../vendor-vehicle/entities/vendor-vehicle.entity';
 
 @Entity('vehicles')
 export class Vehicle {
@@ -58,6 +61,16 @@ export class Vehicle {
     default: 'Reguler',
   })
   pricing_category!: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  vendor_id!: string;
+
+  @ManyToOne(() => VendorVehicle, (vendor) => vendor.vehicles, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'vendor_id' })
+  vendor!: VendorVehicle;
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

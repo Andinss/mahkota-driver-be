@@ -23,6 +23,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SaldoModule } from './saldo/saldo.module';
+import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { SaldoModule } from './saldo/saldo.module';
     AuditModule,
     MonitoringModule,
     SaldoModule,
+    VendorVehicleModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [AppService, VehicleAssignmentService, {

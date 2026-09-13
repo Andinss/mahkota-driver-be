@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Vehicle } from './entities/vehicle.entity';
+import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
 import { VehicleQueryDto } from './dto/vehicle-query.dto';
 import { VehicleExportDto } from './dto/vehicle-export.dto';
@@ -27,6 +28,7 @@ export class VehiclesService {
 
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
+      .leftJoinAndSelect('v.vendor', 'vendor')
       .orderBy('v.created_at', 'DESC');
 
     if (query?.search) {
@@ -38,6 +40,10 @@ export class VehiclesService {
 
     if (query?.status) {
       qb.andWhere('v.status = :status', { status: query.status });
+    }
+
+    if (query?.vendor_id) {
+      qb.andWhere('v.vendor_id = :vendorId', { vendorId: query.vendor_id });
     }
 
     const [data, total] = await qb
@@ -63,6 +69,7 @@ export class VehiclesService {
   async findById(id: string) {
     const vehicle = await this.vehiclesRepository.findOne({
       where: { id },
+      relations: { vendor: true },
     });
 
     if (!vehicle) {
@@ -79,6 +86,7 @@ export class VehiclesService {
   async findDetailById(id: string) {
     const vehicle = await this.vehiclesRepository.findOne({
       where: { id },
+      relations: { vendor: true },
     });
 
     if (!vehicle) {
@@ -136,10 +144,12 @@ export class VehiclesService {
   async findByVehicleId(vehicleId: string): Promise<Vehicle | null> {
     let vehicle = await this.vehiclesRepository.findOne({
       where: { id: vehicleId },
+      relations: { vendor: true },
     });
     if (!vehicle && /^[0-9a-f-]{36}$/i.test(vehicleId)) {
       vehicle = await this.vehiclesRepository.findOne({
         where: { id: vehicleId },
+        relations: { vendor: true },
       });
     }
     return vehicle;
@@ -147,6 +157,10 @@ export class VehiclesService {
 
   async create(data: AddVehicleDto, files?: Express.Multer.File[]) {
     try {
+      if (data.vendor_id) {
+        await this.validateVendor(data.vendor_id);
+      }
+
       if (files && files.length > 0) {
         data.vehicle_photo = files.map((file) => file.path.replace(/\\/g, '/'));
       }
@@ -190,6 +204,10 @@ export class VehiclesService {
 
       if (!existingVehicle) {
         throw new NotFoundException('Vehicle not found');
+      }
+
+      if (data.vendor_id) {
+        await this.validateVendor(data.vendor_id);
       }
 
       if (files && files.length > 0) {
@@ -418,6 +436,17 @@ export class VehiclesService {
       contentType: 'application/pdf',
       filename: `vehicles_export_${Date.now()}.pdf`,
     };
+  }
+
+  private async validateVendor(vendorId: string) {
+    const vendor = await this.vehiclesRepository.manager.findOne(
+      VendorVehicle,
+      { where: { id: vendorId } },
+    );
+
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
   }
 
   async delete(
