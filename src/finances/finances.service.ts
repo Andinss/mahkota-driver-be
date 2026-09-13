@@ -387,6 +387,27 @@ export class FinancesService {
       .where('f.status != :cancelled', { cancelled: 'cancelled' })
       .getRawOne();
 
+    // Total bulan ini 
+    const monthResult = await this.financesRepository
+      .createQueryBuilder('f')
+      .select('COALESCE(SUM(f.amount_received), 0)', 'total')
+      .where('f.status != :cancelled', { cancelled: 'cancelled' })
+      .andWhere(
+        'EXTRACT(MONTH FROM f.payment_date) = EXTRACT(MONTH FROM CURRENT_DATE)',
+      )
+      .andWhere(
+        'EXTRACT(YEAR FROM f.payment_date) = EXTRACT(YEAR FROM CURRENT_DATE)',
+      )
+      .getRawOne();
+
+    // Total hari ini 
+    const todayResult = await this.financesRepository
+      .createQueryBuilder('f')
+      .select('COALESCE(SUM(f.amount_received), 0)', 'total')
+      .where('f.status != :cancelled', { cancelled: 'cancelled' })
+      .andWhere('f.payment_date = CURRENT_DATE')
+      .getRawOne();
+
     const byMethod = await this.financesRepository
       .createQueryBuilder('f')
       .select('f.payment_method', 'method')
@@ -425,6 +446,8 @@ export class FinancesService {
       message: 'Finance summary retrieved successfully',
       data: {
         total_amount_received: Number(totalResult?.total || 0),
+        total_this_month: Number(monthResult?.total || 0),
+        total_today: Number(todayResult?.total || 0),
         total_active: totalActive,
         total_inactive: totalInactive,
         total_records: totalRecords,
@@ -1361,8 +1384,6 @@ export class FinancesService {
       if (!finance) {
         throw new NotFoundException('Finance not found');
       }
-
-      const linkedRentalIds = finance.rentals?.map((r) => r.id) || [];
 
       // Balik pengaruh uang masuk untuk SEMUA pembayaran yang sudah paid
       for (const payment of finance.payments || []) {
