@@ -5,11 +5,13 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource, QueryRunner } from 'typeorm';
+import { Repository, In, DataSource, QueryRunner, QueryFailedError } from 'typeorm';
 import { Finance } from './entities/finance.entity';
 import { FinancePayment } from './entities/finance-payment.entity';
 import { Rental } from '../rentals/entities/rental.entity';
 import { Driver } from '../drivers/entities/driver.entity';
+import { Vehicle } from '../vehicles/entities/vehicle.entity';
+import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity';
 import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
 import { SaldoTransaction } from '../saldo/entities/saldo-transaction.entity';
 import { AddFinanceDto } from './dto/add-finance.dto';
@@ -87,31 +89,41 @@ export class FinancesService {
   }
 
   /**
-   * Admin fee join untuk akun yang pertama kali melakukan sewa (per jenis mobil).
+   * Admin fee join (PER MOBIL/RENTAL yang pertama kali dibiayai).
    * - Reguler  -> Rp 500.000
    * - Premium  -> Rp 700.000
-   * Hanya dikenakan bila rental yang di-link adalah sewa pertama dari akun tersebut
-   * (tidak ada riwayat sewa lain selain yang di-link pada finance ini).
+   * Fee hanya dikenakan saat sebuah rental/mobil BARU pertama kali dipakai
+   * dalam finance. Jika rental sudah pernah terhubung finance manapun,
+   * tidak dikenakan biaya lagi.
    */
   private async computeAdminJoinFee(
     driverId: string,
     rentalIds?: string[],
+    queryRunner?: QueryRunner,
   ): Promise<number> {
     if (!rentalIds || rentalIds.length === 0) return 0;
 
-    const rentals = await this.rentalsRepository.find({
-      where: { id: In(rentalIds) },
+    const manager = queryRunner?.manager ?? this.dataSource.manager;
+
+    const rentals = await manager.find(Rental, {
+      where: { id: In(rentalIds), driver_id: driverId },
       relations: { vehicle: true },
     });
     if (rentals.length === 0) return 0;
 
-    const totalDriverRentals = await this.rentalsRepository.count({
-      where: { driver_id: driverId },
-    });
-    if (totalDriverRentals > rentals.length) return 0;
+    const foundIds = rentals.map((r) => r.id);
+
+    // Rental yang sudah pernah terhubung finance manapun = sudah 'join' ->
+    // tidak dikenakan fee lagi.
+    const raw = (await manager.query(
+      'SELECT DISTINCT rental_id FROM finance_rentals WHERE rental_id = ANY($1)',
+      [foundIds],
+    )) as { rental_id: string }[];
+    const joinedIds = new Set(raw.map((row) => row.rental_id));
 
     let fee = 0;
     for (const rental of rentals) {
+      if (joinedIds.has(rental.id)) continue;
       const category = rental.vehicle?.pricing_category;
       if (category === 'Premium') fee += 700_000;
       else if (category === 'Reguler') fee += 500_000;
@@ -170,12 +182,21 @@ export class FinancesService {
     };
   }
 
-  private buildFinanceView(finance: Finance, totals?: PaymentTotals) {
+  private buildFinanceView(
+    finance: Finance,
+    totals?: PaymentTotals,
+    fallback?: { vehicle?: Vehicle; vendor?: VendorVehicle },
+  ) {
     const t = totals || this.getPaymentTotals(finance.payments);
     const total = this.resolveTotalAmount(finance);
     const paidAmount = Math.min(t.paid, total);
     const remainingAmount = Math.max(0, total - paidAmount);
     const status = this.deriveStatus(total, t.paid, t.pending, finance.status);
+
+    const rentals = finance.rentals || [];
+    const firstRental = rentals[0];
+    const vehicle = firstRental?.vehicle ?? fallback?.vehicle;
+    const vendor = vehicle?.vendor ?? fallback?.vendor;
 
     return {
       id: finance.id,
@@ -196,9 +217,25 @@ export class FinancesService {
       payer: finance.payer,
       driver_id: finance.driver_id,
       driver: finance.driver,
+      vehicle: vehicle
+        ? {
+            id: vehicle.id,
+            merk: vehicle.merk,
+            model: vehicle.model,
+            license_plate: vehicle.license_plate,
+            engine_status: vehicle.engine_status,
+          }
+        : undefined,
+      vendor: vendor
+        ? {
+            id: vendor.id,
+            name: vendor.name,
+            owner_name: vendor.owner_name,
+          }
+        : undefined,
       finance_type: status,
       status,
-      rentals: finance.rentals || [],
+      rentals: rentals,
       payments: finance.payments
         ? finance.payments
             .slice()
@@ -251,6 +288,39 @@ export class FinancesService {
     return result;
   }
 
+  private async getFallbackVehicleMap(
+    finances: Finance[],
+  ): Promise<Map<string, { vehicle?: Vehicle; vendor?: VendorVehicle }>> {
+    const missing = finances.filter(
+      (f) => !f.rentals || f.rentals.length === 0 || !f.rentals[0]?.vehicle,
+    );
+    if (missing.length === 0) return new Map();
+
+    const driverIds = [
+      ...new Set(missing.map((f) => f.driver_id).filter(Boolean)),
+    ];
+    if (driverIds.length === 0) return new Map();
+
+    const rows = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .where('r.driver_id IN (:...driverIds)', { driverIds })
+      .orderBy('r.created_at', 'DESC')
+      .getMany();
+
+    const map = new Map<string, { vehicle?: Vehicle; vendor?: VendorVehicle }>();
+    for (const r of rows) {
+      if (!map.has(r.driver_id) && r.vehicle) {
+        map.set(r.driver_id, {
+          vehicle: r.vehicle,
+          vendor: r.vehicle.vendor,
+        });
+      }
+    }
+    return map;
+  }
+
   async findAll(query?: FinanceQueryDto) {
     const page = query?.page || 1;
     const limit = query?.limit || 10;
@@ -260,6 +330,8 @@ export class FinancesService {
       .createQueryBuilder('f')
       .leftJoinAndSelect('f.driver', 'driver')
       .leftJoinAndSelect('f.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
       .orderBy('f.created_at', 'DESC');
 
     if (query?.search) {
@@ -277,6 +349,15 @@ export class FinancesService {
 
     if (query?.driver_id) {
       qb.andWhere('f.driver_id = :driverId', { driverId: query.driver_id });
+    }
+
+    if (query?.rental_id) {
+      qb.innerJoin(
+        'f.rentals',
+        'filter_rentals',
+        'filter_rentals.id = :rentalId',
+        { rentalId: query.rental_id },
+      );
     }
 
     if (query?.status) {
@@ -299,10 +380,16 @@ export class FinancesService {
 
     const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
+    const fallbackMap = await this.getFallbackVehicleMap(data);
+
     const totals = await this.attachTotals(data);
 
     const items = data.map((f) =>
-      this.buildFinanceView(f, totals[f.id] || { paid: 0, pending: 0, count: 0 }),
+      this.buildFinanceView(
+        f,
+        totals[f.id] || { paid: 0, pending: 0, count: 0 },
+        fallbackMap.get(f.driver_id),
+      ),
     );
 
     const totalPages = Math.ceil(total / limit);
@@ -323,7 +410,11 @@ export class FinancesService {
   async findByReferenceNumber(referenceNumber: string) {
     const finance = await this.financesRepository.findOne({
       where: { reference_number: referenceNumber },
-      relations: { driver: true, rentals: true, payments: true },
+      relations: {
+        driver: true,
+        rentals: { vehicle: { vendor: true }, driver: true },
+        payments: true,
+      },
     });
     if (!finance) {
       throw new NotFoundException('Finance not found');
@@ -338,7 +429,11 @@ export class FinancesService {
   async findById(id: string) {
     const finance = await this.financesRepository.findOne({
       where: { id },
-      relations: { driver: true, rentals: true, payments: true },
+      relations: {
+        driver: true,
+        rentals: { vehicle: { vendor: true }, driver: true },
+        payments: true,
+      },
     });
     if (!finance) {
       throw new NotFoundException('Finance not found');
@@ -355,7 +450,7 @@ export class FinancesService {
       where: { id },
       relations: {
         driver: true,
-        rentals: { vehicle: true, driver: true },
+        rentals: { vehicle: { vendor: true }, driver: true },
         payments: true,
       },
     });
@@ -608,23 +703,22 @@ export class FinancesService {
         }
       }
 
-      // Admin fee join otomatis untuk akun yang pertama kali menyewa.
-      // Ditambahkan ke total tagihan bila finance terhubung rental pertama.
+      // Admin fee join otomatis per mobil/rental yang baru pertama kali dibiayai
+      // (Reguler Rp 500.000, Premium Rp 700.000). Ditambahkan ke total tagihan.
+      // Rental yang sudah pernah terhubung finance tidak dikenakan biaya lagi.
       const autoJoinFee = await this.computeAdminJoinFee(
         data.driver_id,
         rental_ids,
+        queryRunner,
       );
-      const joinFee =
-        autoJoinFee > 0
-          ? autoJoinFee
-          : Number(data.fee_admin_join) || 0;
+      const joinFee = autoJoinFee;
 
       const baseAmount =
         data.total_amount !== undefined && Number(data.total_amount) > 0
           ? Number(data.total_amount)
           : Number(data.amount_received) || 0;
 
-      const totalAmount = baseAmount + (autoJoinFee > 0 ? autoJoinFee : 0);
+      const totalAmount = baseAmount + autoJoinFee;
 
       if (!(totalAmount > 0)) {
         throw new BadRequestException(
@@ -650,6 +744,16 @@ export class FinancesService {
         } else {
           initialPaymentStatus = 'paid';
         }
+      }
+
+      // Cek duplikasi No. Referensi sebelum simpan (cepat + friendly error).
+      const existingRefCount = await this.financesRepository.count({
+        where: { reference_number: data.reference_number },
+      });
+      if (existingRefCount > 0) {
+        throw new BadRequestException(
+          'No. referensi sudah pernah digunakan. Gunakan nomor lain.',
+        );
       }
 
       const finance = queryRunner.manager.create(Finance, {
@@ -724,6 +828,14 @@ export class FinancesService {
       ) {
         throw error;
       }
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { code: string }).code === '23505'
+      ) {
+        throw new BadRequestException(
+          'No. referensi sudah pernah digunakan. Gunakan nomor lain.',
+        );
+      }
       throw new InternalServerErrorException('Failed to create finance');
     } finally {
       await queryRunner.release();
@@ -741,10 +853,13 @@ export class FinancesService {
 
     const totals = this.getPaymentTotals(existingFinance.payments);
     const currentTotal = this.resolveTotalAmount(existingFinance);
+    // Admin fee join sudah ditetapkan sekali saat create. Nilai total_amount
+    // dari frontend adalah nilai dasar (belum termasuk admin fee).
+    const storedFee = Number(existingFinance.fee_admin_join) || 0;
 
     let newTotal = currentTotal;
     if (data.total_amount !== undefined && Number(data.total_amount) > 0) {
-      newTotal = Number(data.total_amount);
+      newTotal = Number(data.total_amount) + storedFee;
       if (newTotal < totals.paid) {
         throw new BadRequestException(
           `Total tagihan tidak boleh lebih kecil dari total yang sudah dibayar (Rp ${totals.paid.toLocaleString('id-ID')}).`,
@@ -758,10 +873,40 @@ export class FinancesService {
       total_amount: newTotal,
     };
 
-    const result = await this.financesRepository.update(id, updatePayload);
+    // Cek duplikasi No. Referensi (abaikan jika tidak berubah dari yang lama).
+    if (
+      updateData.reference_number &&
+      updateData.reference_number !== existingFinance.reference_number
+    ) {
+      const existingRefCount = await this.financesRepository.count({
+        where: { reference_number: updateData.reference_number },
+      });
+      if (existingRefCount > 0) {
+        throw new BadRequestException(
+          'No. referensi sudah pernah digunakan. Gunakan nomor lain.',
+        );
+      }
+    }
 
-    if (result.affected === 0) {
-      throw new NotFoundException('Finance not found');
+    try {
+      const result = await this.financesRepository.update(id, updatePayload);
+
+      if (result.affected === 0) {
+        throw new NotFoundException('Finance not found');
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { code: string }).code === '23505'
+      ) {
+        throw new BadRequestException(
+          'No. referensi sudah pernah digunakan. Gunakan nomor lain.',
+        );
+      }
+      throw error;
     }
 
     if (rental_ids !== undefined) {
