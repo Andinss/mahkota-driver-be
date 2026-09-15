@@ -42,6 +42,10 @@ export class FinanceQueryDto {
   driver_id?: string;
 
   @IsOptional()
+  @IsUUID()
+  rental_id?: string;
+
+  @IsOptional()
   @IsEnum(['unpaid', 'pending', 'partially_paid', 'paid', 'cancelled'])
   status?: string;
 }
