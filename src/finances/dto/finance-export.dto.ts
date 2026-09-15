@@ -12,6 +12,10 @@ export class FinanceExportDto {
 
   @IsOptional()
   @IsString()
+  payment_method?: string;
+
+  @IsOptional()
+  @IsString()
   start_date?: string;
 
   @IsOptional()

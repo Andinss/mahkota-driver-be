@@ -295,12 +295,20 @@ export class RentalsService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration'];
+      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration', 'rentalDuration', 'rentalService', 'engine'];
 
     const qb = this.rentalsRepository
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.driver', 'driver')
       .leftJoinAndSelect('r.vehicle', 'vehicle');
+
+    if (query.vehicle_id) {
+      qb.andWhere('r.vehicle_id = :vehicleId', { vehicleId: query.vehicle_id });
+    }
+
+    if (query.driver_id) {
+      qb.andWhere('r.driver_id = :driverId', { driverId: query.driver_id });
+    }
 
     if (query.search) {
       qb.where(
@@ -328,6 +336,23 @@ export class RentalsService {
       rentalPeriod: (r) => `${r.start_date} to ${r.end_date}`,
       duration: (r) => String(r.total_duration) || '-',
       dailyRate: (r) => `Rp ${Number(r.daily_rate).toLocaleString('id-ID')}`,
+      rentalDuration: (r) => r.rental_duration || '-',
+      rentalService: (r) => r.rental_service || '-',
+      engine: (r) => r.vehicle?.engine_status || '-',
+      totalDistance: (r) => '-',
+      fuelEfficiency: (r) => '-',
+      maintenance: (r) => '-',
+      status: (r) => {
+        try {
+          const now = new Date();
+          const start = r.start_date ? new Date(r.start_date) : null;
+          const end = r.end_date ? new Date(r.end_date) : null;
+          if (start && end && now >= start && now <= end) return 'Active';
+          if (end && now > end) return 'Completed';
+          if (start && now < start) return 'Upcoming';
+        } catch {}
+        return '-';
+      },
     };
 
     const headerLabels: Record<string, string> = {
@@ -339,6 +364,13 @@ export class RentalsService {
       rentalPeriod: 'Rental Period',
       duration: 'Duration (Days)',
       dailyRate: 'Daily Rate',
+      rentalDuration: 'Tipe Durasi',
+      rentalService: 'Jenis Layanan',
+      engine: 'Engine',
+      totalDistance: 'Total Distance',
+      fuelEfficiency: 'Fuel Efficiency',
+      maintenance: 'Maintenance',
+      status: 'Status',
     };
 
     const activeColumns = selectedColumns.filter((c) => columnMap[c]);

@@ -271,10 +271,11 @@ export class VehiclesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'year', 'licensePlate', 'dailyRate', 'pricingCategory', 'status'];
+      : ['name', 'year', 'transmission', 'licensePlate', 'type', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
 
     const qb = this.vehiclesRepository
-      .createQueryBuilder('v');
+      .createQueryBuilder('v')
+      .leftJoinAndSelect('v.vendor', 'vendor');
 
     if (query.search) {
       qb.where(
@@ -304,6 +305,9 @@ export class VehiclesService {
       vinNumber: (v) => v.vin_number || '-',
       engineNumber: (v) => v.engine_number || '-',
       id: (v) => v.id || '-',
+      transmission: () => '-',
+      type: (v) => v.pricing_category || '-',
+      vendor: (v) => v.vendor?.name || '-',
     };
 
     const headerLabels: Record<string, string> = {
@@ -317,6 +321,9 @@ export class VehiclesService {
       vinNumber: 'VIN Number',
       engineNumber: 'Engine Number',
       id: 'Vehicle ID',
+      transmission: 'Transmission',
+      type: 'Type',
+      vendor: 'Vendor',
     };
 
     const activeColumns = selectedColumns.filter((c) => columnMap[c]);

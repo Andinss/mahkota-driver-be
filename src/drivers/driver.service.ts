@@ -335,9 +335,10 @@ export class DriverService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'employeeId', 'phoneNumber', 'email'];
+      : ['name', 'employee_id', 'phone', 'email', 'saldo'];
 
-    const qb = this.driversRepository.createQueryBuilder('d');
+    const qb = this.driversRepository.createQueryBuilder('d')
+      .leftJoinAndSelect('d.saldo', 'saldo');
 
     if (query.search) {
       qb.where(
@@ -359,15 +360,39 @@ export class DriverService {
     const columnMap: Record<string, (d: Driver) => string | undefined> = {
       name: (d) => [d.first_name, d.last_name].filter(Boolean).join(' ') || '-',
       employeeId: (d) => d.employee_id || '-',
+      employee_id: (d) => d.employee_id || '-',
       phoneNumber: (d) => d.phone || '-',
+      phone: (d) => d.phone || '-',
       email: (d) => d.email || '-',
+      saldo: (d) => String(d.saldo?.balance || 0),
+      gender: (d) => d.gender || '-',
+      date_of_birth: (d) => d.date_of_birth ? new Date(d.date_of_birth).toLocaleDateString('id-ID') : '-',
+      citizenship: (d) => d.citizenship || '-',
+      house_type: (d) => d.house_type || '-',
+      province_name: (d) => d.province_name || '-',
+      city_name: (d) => d.city_name || '-',
+      willing_to_be_survey: (d) => (d.willing_to_be_survey ? 'Yes' : 'No'),
+      ready_sign_contract: (d) => (d.ready_sign_contract ? 'Yes' : 'No'),
+      id: (d) => d.id || '-',
     };
 
     const headerLabels: Record<string, string> = {
       name: 'Driver Name',
       employeeId: 'Employee ID',
+      employee_id: 'Employee ID',
       phoneNumber: 'Phone Number',
+      phone: 'Phone Number',
       email: 'Email',
+      saldo: 'Saldo',
+      gender: 'Gender',
+      date_of_birth: 'Date of Birth',
+      citizenship: 'Citizenship',
+      house_type: 'House Type',
+      province_name: 'Province',
+      city_name: 'City / Regency',
+      willing_to_be_survey: 'Willing to be Surveyed',
+      ready_sign_contract: 'Ready Sign Contract',
+      id: 'Driver ID',
     };
 
     const activeColumns = selectedColumns.filter((c) => columnMap[c]);
