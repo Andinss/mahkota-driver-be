@@ -1306,12 +1306,20 @@ export class FinancesService {
           'status',
           'payment_date',
           'payment_method',
+          'fee_admin_join',
+          'deposit_amount',
+          'created_at',
+          'vehicle',
+          'vendor',
+          'rental_period',
         ];
 
     const qb = this.financesRepository
       .createQueryBuilder('f')
       .leftJoinAndSelect('f.driver', 'driver')
       .leftJoinAndSelect('f.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
       .leftJoinAndSelect('f.payments', 'payments');
 
     if (query.search) {
@@ -1319,6 +1327,12 @@ export class FinancesService {
         '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
         { search: `%${query.search}%` },
       );
+    }
+
+    if (query.payment_method) {
+      qb.andWhere('f.payment_method = :method', {
+        method: query.payment_method,
+      });
     }
 
     if (query.start_date) {
@@ -1368,6 +1382,15 @@ export class FinancesService {
         v.driver ? `${v.driver.first_name} ${v.driver.last_name}`.trim() : '-',
       notes: (v) => v.notes || '-',
       id: (v) => v.id || '-',
+      vehicle: (v) => v.vehicle ? `${v.vehicle.merk} ${v.vehicle.model}`.trim() : '-',
+      vendor: (v) => v.vendor ? v.vendor.name || '-' : '-',
+      rental_period: (v) => {
+        const rentals = v.rentals || [];
+        if (rentals.length > 0) {
+          return `${new Date(rentals[0].start_date).toLocaleDateString('id-ID')} to ${new Date(rentals[0].end_date).toLocaleDateString('id-ID')}`;
+        }
+        return '-';
+      },
     };
 
     const headerLabels: Record<string, string> = {
@@ -1387,6 +1410,9 @@ export class FinancesService {
       driverName: 'Driver Name',
       notes: 'Notes',
       id: 'Finance ID',
+      vehicle: 'Vehicle',
+      vendor: 'Vendor',
+      rental_period: 'Rental Period',
     };
 
     const activeColumns = selectedColumns.filter((c) => columnMap[c]);

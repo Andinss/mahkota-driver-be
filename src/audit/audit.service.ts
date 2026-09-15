@@ -70,7 +70,7 @@ export class AuditService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['timestamp', 'user', 'action', 'target', 'status'];
+      : ['timestamp', 'user', 'action', 'target', 'device', 'status'];
 
     const qb = this.auditRepository.createQueryBuilder('a');
 

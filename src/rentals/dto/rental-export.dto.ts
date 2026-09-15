@@ -25,4 +25,12 @@ export class RentalExportDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  vehicle_id?: string;
+
+  @IsOptional()
+  @IsString()
+  driver_id?: string;
 }

@@ -9,11 +9,15 @@ import {
   ParseUUIDPipe,
   UseGuards,
   Req,
+  Query,
+  StreamableFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { RoleService } from './roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AddPermissionsToRoleDto } from './dto/add-permissions-to-role.dto';
+import { RoleExportDto } from './dto/role-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -50,6 +54,19 @@ export class RoleController {
   @Permissions('role.read')
   findAll() {
     return this.roleService.findAll();
+  }
+
+  @Get('export')
+  @Permissions('role.read')
+  async export(@Query() query: RoleExportDto) {
+    const result = await this.roleService.exportData(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   @Get(':id')
