@@ -23,4 +23,8 @@ export class AddUserDto {
 
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  driver_id?: string;
 }

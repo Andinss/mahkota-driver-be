@@ -81,11 +81,11 @@ export class AuditService {
     }
 
     if (query.start_date) {
-      qb.andWhere('a.created_at >= :start', { start: query.start_date });
+      qb.andWhere('a.created_at >= :start', { start: query.start_date + ' 00:00:00' });
     }
 
     if (query.end_date) {
-      qb.andWhere('a.created_at <= :end', { end: query.end_date });
+      qb.andWhere('a.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
     }
 
     const logs = await qb.orderBy('a.created_at', 'DESC').getMany();

@@ -26,4 +26,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  driver_id?: string;
 }
