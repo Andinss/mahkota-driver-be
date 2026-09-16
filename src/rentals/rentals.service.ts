@@ -318,11 +318,11 @@ export class RentalsService {
     }
 
     if (query.start_date) {
-      qb.andWhere('r.created_at >= :start', { start: query.start_date });
+      qb.andWhere('r.created_at >= :start', { start: query.start_date + ' 00:00:00' });
     }
 
     if (query.end_date) {
-      qb.andWhere('r.created_at <= :end', { end: query.end_date });
+      qb.andWhere('r.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
     }
 
     const rentals = await qb.orderBy('r.created_at', 'DESC').getMany();

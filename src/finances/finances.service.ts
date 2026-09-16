@@ -1337,13 +1337,13 @@ export class FinancesService {
 
     if (query.start_date) {
       qb.andWhere('f.payment_date >= :startDate', {
-        startDate: query.start_date,
+        startDate: query.start_date + ' 00:00:00',
       });
     }
 
     if (query.end_date) {
       qb.andWhere('f.payment_date <= :endDate', {
-        endDate: query.end_date,
+        endDate: query.end_date + ' 23:59:59.999',
       });
     }
 
@@ -1477,7 +1477,7 @@ export class FinancesService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult);
+    const buffer = Buffer.from(writeResult as ArrayBuffer);
 
     return {
       buffer,

@@ -285,11 +285,11 @@ export class VehiclesService {
     }
 
     if (query.start_date) {
-      qb.andWhere('v.created_at >= :start', { start: query.start_date });
+      qb.andWhere('v.created_at >= :start', { start: query.start_date + ' 00:00:00' });
     }
 
     if (query.end_date) {
-      qb.andWhere('v.created_at <= :end', { end: query.end_date });
+      qb.andWhere('v.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
     }
 
     const vehicles = await qb.orderBy('v.created_at', 'DESC').getMany();

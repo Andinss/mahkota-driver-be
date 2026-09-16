@@ -111,7 +111,7 @@ export class UsersService {
     });
   }
 
-  async update(id: string, data: Partial<User>) {
+  async update(id: string, data: Partial<User> & { driver_id?: string }) {
     if (data.password) {
       data.password = await bcrypt.hash(data.password, 10);
     }
@@ -131,7 +131,7 @@ export class UsersService {
     };
   }
 
-  async create(data: Partial<User>) {
+  async create(data: Partial<User> & { driver_id?: string }) {
     try {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date();
