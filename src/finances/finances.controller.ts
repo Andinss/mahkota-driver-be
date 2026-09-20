@@ -40,6 +40,21 @@ export class FinancesController {
     return this.financesService.findAll(query);
   }
 
+  @Get('my-finances')
+  @Permissions('finance.read')
+  findMyFinances(@Req() req: any, @Query() query: FinanceQueryDto) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return {
+        success: true,
+        message: 'No driver profile linked to this account',
+        data: [],
+        meta: { total: 0, page: 1, limit: 10, totalPages: 0 },
+      };
+    }
+    return this.financesService.findMyFinances(driverId, query);
+  }
+
   @Get('monthly-summary')
   @Permissions('finance.read')
   getMonthlySummary(@Query('year') year?: string) {
@@ -101,6 +116,33 @@ export class FinancesController {
         action: 'CREATE_FINANCE_PAYMENT',
         target: `finance/${id}`,
         details: `Recorded payment Rp ${dto.amount} for finance ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
+  }
+
+  @Post('my-finances/:id/payments')
+  @Permissions('finance.create')
+  async createMyPayment(
+    @Param('id') id: string,
+    @Body() dto: CreateFinancePaymentDto,
+    @Req() req: any,
+  ) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      throw new BadRequestException('No driver profile linked to this account');
+    }
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.createPaymentForDriver(id, dto, driverId);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_DRIVER_PAYMENT',
+        target: `finance/${id}`,
+        details: `Driver recorded payment Rp ${dto.amount} for finance ${id}`,
         ...meta,
         status: 'success',
       })

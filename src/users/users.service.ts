@@ -95,7 +95,7 @@ export class UsersService {
   async findById(id: string): Promise<User | null> {
     return this.usersRepository.findOne({
       where: { id },
-      relations: { role: { permissions: true } },
+      relations: { role: { permissions: true }, driver: true },
     });
   }
 
