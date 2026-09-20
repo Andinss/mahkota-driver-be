@@ -33,6 +33,16 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
 
+  @Get('me')
+  @Permissions('driver.read.all')
+  findMe(@Req() req: any) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return { success: true, message: 'No driver profile linked', data: null };
+    }
+    return this.driverService.findById(driverId);
+  }
+
   @Get()
   @Permissions('driver.read.all')
   findAll(@Query() query: DriverQueryDto) {

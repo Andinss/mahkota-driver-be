@@ -1057,6 +1057,120 @@ export class FinancesService {
     }
   }
 
+  async createPaymentForDriver(
+    financeId: string,
+    dto: CreateFinancePaymentDto,
+    driverId: string,
+  ) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await this.lockFinance(queryRunner, financeId);
+
+      const finance = await queryRunner.manager.findOne(Finance, {
+        where: { id: financeId },
+        relations: { payments: true },
+      });
+      if (!finance) {
+        throw new NotFoundException('Finance not found');
+      }
+
+      if (finance.driver_id !== driverId) {
+        throw new BadRequestException(
+          'Anda tidak memiliki akses untuk membayar tagihan ini',
+        );
+      }
+
+      if (finance.status === 'cancelled') {
+        throw new BadRequestException(
+          'Finance sudah dibatalkan dan tidak dapat menerima pembayaran',
+        );
+      }
+      if (finance.status === 'paid') {
+        throw new BadRequestException(
+          'Finance sudah lunas dan tidak dapat menerima pembayaran lagi',
+        );
+      }
+
+      const total = this.resolveTotalAmount(finance);
+      const totals = this.getPaymentTotals(finance.payments);
+      const remaining = Math.max(0, total - totals.paid);
+
+      const amount = Number(dto.amount);
+      if (amount <= 0) {
+        throw new BadRequestException('Nominal pembayaran harus lebih dari 0');
+      }
+      if (amount > remaining) {
+        throw new BadRequestException(
+          `Nominal pembayaran (Rp ${amount.toLocaleString('id-ID')}) melebihi sisa tagihan (Rp ${remaining.toLocaleString('id-ID')}).`,
+        );
+      }
+
+      const paymentStatus: 'paid' | 'pending' =
+        dto.status === 'pending' ? 'pending' : 'paid';
+
+      const payment = queryRunner.manager.create(FinancePayment, {
+        finance_id: financeId,
+        driver_id: driverId,
+        amount,
+        payment_method: dto.payment_method,
+        payment_date: new Date(dto.payment_date),
+        reference_number: dto.reference_number,
+        notes: dto.notes,
+        status: paymentStatus,
+      });
+      await queryRunner.manager.save(payment);
+
+      if (paymentStatus === 'paid') {
+        await this.applyPaidPayment(queryRunner, finance, payment);
+      }
+
+      const reloaded = await queryRunner.manager.findOne(Finance, {
+        where: { id: financeId },
+        relations: { driver: true, rentals: true, payments: true },
+      });
+      if (!reloaded) {
+        throw new InternalServerErrorException('Failed to reload finance');
+      }
+
+      const newTotals = this.getPaymentTotals(reloaded.payments);
+      reloaded.amount_received = newTotals.paid;
+      reloaded.status = this.deriveStatus(
+        total,
+        newTotals.paid,
+        newTotals.pending,
+      );
+      await queryRunner.manager.save(reloaded);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        success: true,
+        message:
+          paymentStatus === 'paid'
+            ? 'Pembayaran berhasil dicatat'
+            : 'Pembayaran dicatat sebagai pending dan menunggu verifikasi',
+        data: this.buildFinanceView(reloaded),
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Failed to create driver payment:', error);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to create driver payment',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async listPayments(financeId: string) {
     const finance = await this.financesRepository.findOne({
       where: { id: financeId },
@@ -1218,6 +1332,62 @@ export class FinancesService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async findMyFinances(driverId: string, query?: FinanceQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.financesRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.driver', 'driver')
+      .leftJoinAndSelect('f.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+      .where('f.driver_id = :driverId', { driverId })
+      .andWhere('f.is_active = :isActive', { isActive: true })
+      .orderBy('f.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.andWhere(
+        '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query?.status) {
+      qb.andWhere('f.status IN (:...statuses)', {
+        statuses: Array.isArray(query.status) ? query.status : [query.status],
+      });
+    }
+
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    const fallbackMap = await this.getFallbackVehicleMap(data);
+    const totals = await this.attachTotals(data);
+
+    const items = data.map((f) =>
+      this.buildFinanceView(
+        f,
+        totals[f.id] || { paid: 0, pending: 0, count: 0 },
+        fallbackMap.get(f.driver_id),
+      ),
+    );
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      success: true,
+      message: 'Driver finances retrieved successfully',
+      data: items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
   }
 
   async getDriverSummary(driverId: string) {

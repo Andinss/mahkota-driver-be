@@ -34,6 +34,7 @@ const modulePermissions: Record<string, string[]> = {
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
   vendor: ['create', 'read', 'update', 'delete'],
+  driver_portal: ['dashboard', 'payment', 'profile'],
 };
 
 const allPermissionNames: string[] = [];
@@ -91,10 +92,13 @@ const rolesData: RoleSeed[] = [
     },
   },
   {
-    name: 'Driver', code: 'DRIVER', description: 'Driver - no dashboard access',
+    name: 'Driver', code: 'DRIVER', description: 'Driver - access payment and profile',
     permissionFilter: (name) => {
       const perms = [
+        'driver.read.all',
+        'finance.read', 'finance.create',
         'saldo.read', 'saldo.top_up',
+        'driver_portal.dashboard', 'driver_portal.payment', 'driver_portal.profile',
       ];
       return perms.includes(name);
     },
@@ -357,16 +361,23 @@ async function seed() {
     { username: 'finance1', email: 'finance1@example.com', password: 'finance123', roleCode: 'FINANCE' },
     { username: 'field1', email: 'field1@example.com', password: 'field123', roleCode: 'FIELD_OFFICER' },
     { username: 'owner1', email: 'owner1@example.com', password: 'owner123', roleCode: 'OWNER' },
+    { username: 'driver1', email: 'driver1@example.com', password: 'driver123', roleCode: 'DRIVER', driverIndex: 0 },
+    { username: 'driver2', email: 'driver2@example.com', password: 'driver123', roleCode: 'DRIVER', driverIndex: 1 },
   ];
 
   const createdUsers: User[] = [];
-  for (const userData of usersData) {
+  const driverUserMap: { userIndex: number; driverIndex: number }[] = [];
+  for (let i = 0; i < usersData.length; i++) {
+    const userData = usersData[i];
     const existing = await userRepository.findOne({
       where: [{ username: userData.username }, { email: userData.email }],
     });
     if (existing) {
       console.log(`  User already exists: ${userData.username}`);
       createdUsers.push(existing);
+      if ('driverIndex' in userData && typeof (userData as any).driverIndex === 'number') {
+        driverUserMap.push({ userIndex: i, driverIndex: (userData as any).driverIndex });
+      }
       continue;
     }
 
@@ -381,6 +392,9 @@ async function seed() {
     });
     const saved = await userRepository.save(user);
     createdUsers.push(saved);
+    if ('driverIndex' in userData && typeof (userData as any).driverIndex === 'number') {
+      driverUserMap.push({ userIndex: i, driverIndex: (userData as any).driverIndex });
+    }
     console.log(`  Created user: ${userData.username} (${userData.roleCode})`);
   }
 
@@ -464,6 +478,19 @@ async function seed() {
     driver = await driverRepository.save(driver);
     createdDrivers.push(driver);
     console.log(`  Created driver: ${dData.employee_id} (${dData.first_name} ${dData.last_name})`);
+  }
+
+  // Link driver users to their driver records
+  console.log('\n── Linking Driver Users ──');
+  for (const mapping of driverUserMap) {
+    const user = createdUsers[mapping.userIndex];
+    const driver = createdDrivers[mapping.driverIndex];
+    if (user && driver && !user.driver_id) {
+      await userRepository.update(user.id, { driver_id: driver.id });
+      console.log(`  Linked user ${user.username} → driver ${driver.first_name} ${driver.last_name}`);
+    } else if (user?.driver_id) {
+      console.log(`  User ${user.username} already linked to driver`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -551,6 +578,7 @@ async function seed() {
       payment_date: new Date('2026-08-02'),
       reference_number: 'PAY/2026/08/0001',
       payment_method: 'transfer',
+      total_amount: 12000000,
       amount_received: 5000000,
       deposit_amount: 5000000,
       notes: 'DP Rental Avanza - Budi Santoso',
@@ -559,11 +587,13 @@ async function seed() {
       finance_type: 'paid',
       rentals: [createdRentals[0]],
       is_active: true,
+      initialPayment: 5000000,
     },
     {
       payment_date: new Date('2026-08-06'),
       reference_number: 'PAY/2026/08/0002',
       payment_method: 'cash',
+      total_amount: 10750000,
       amount_received: 10750000,
       deposit_amount: 0,
       notes: 'Full payment rental Brio - Andi Pratama',
@@ -572,40 +602,61 @@ async function seed() {
       finance_type: 'paid',
       rentals: [createdRentals[1]],
       is_active: true,
+      initialPayment: 10750000,
     },
     {
       payment_date: new Date('2026-08-12'),
       reference_number: 'PAY/2026/08/0003',
       payment_method: 'transfer',
+      total_amount: 15000000,
       amount_received: 3000000,
       deposit_amount: 3000000,
       notes: 'Partial payment rental Innova - Siti Rahayu',
       payer: 'Siti Rahayu',
       driver: createdDrivers[2],
-      finance_type: 'paid',
+      finance_type: 'unpaid',
       rentals: [createdRentals[2]],
       is_active: true,
+      initialPayment: 3000000,
     },
     {
       payment_date: new Date('2026-08-20'),
       reference_number: 'PAY/2026/08/0004',
       payment_method: 'transfer',
+      total_amount: 2500000,
       amount_received: 1000000,
       deposit_amount: 1000000,
       notes: 'Partial payment for Xenia rental - Dedi Kurniawan',
       payer: 'Dedi Kurniawan',
       driver: createdDrivers[3],
-      finance_type: 'paid',
+      finance_type: 'unpaid',
       rentals: [createdRentals[3]],
       is_active: true,
+      initialPayment: 1000000,
+    },
+    {
+      payment_date: new Date('2026-09-01'),
+      reference_number: 'PAY/2026/09/0005',
+      payment_method: 'transfer',
+      total_amount: 10500000,
+      amount_received: 0,
+      deposit_amount: 0,
+      notes: 'Tagihan bulanan Avanza September - Budi Santoso',
+      payer: 'Budi Santoso',
+      driver: createdDrivers[0],
+      finance_type: 'unpaid',
+      rentals: [createdRentals[0]],
+      is_active: true,
+      initialPayment: 0,
     },
   ];
 
   const createdFinances: Finance[] = [];
   const financePaymentRepository = app.get<Repository<FinancePayment>>(getRepositoryToken(FinancePayment));
   for (const fData of financesData) {
-    const { rentals: rentalList, ...financeFields } = fData;
-    const totalAmount = Number((financeFields as any).amount_received) || 0;
+    const { rentals: rentalList, initialPayment, ...financeFields } = fData;
+    const totalAmount = Number((financeFields as any).total_amount) || 0;
+    const paidAmount = Number(initialPayment) || 0;
 
     const existing = await financeRepository.findOne({
       where: { reference_number: (financeFields as any).reference_number },
@@ -619,7 +670,8 @@ async function seed() {
     const finance = financeRepository.create({
       ...financeFields,
       total_amount: totalAmount,
-      status: (financeFields as any).finance_type === 'pending' ? 'pending' : 'paid',
+      amount_received: paidAmount,
+      status: paidAmount >= totalAmount ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'unpaid',
       payment_date: new Date(fData.payment_date),
     });
     if (rentalList && rentalList.length > 0) {
@@ -628,21 +680,22 @@ async function seed() {
     const saved = await financeRepository.save(finance);
     createdFinances.push(saved);
 
-    if (totalAmount > 0) {
+    if (paidAmount > 0) {
       const payment = financePaymentRepository.create({
         finance_id: saved.id,
         driver_id: (financeFields as any).driver.id,
-        amount: totalAmount,
+        amount: paidAmount,
         payment_method: (financeFields as any).payment_method,
         payment_date: new Date(fData.payment_date),
         reference_number: (financeFields as any).reference_number,
-        notes: 'Seed: pembayaran awal lengkap',
-        status: (financeFields as any).finance_type === 'pending' ? 'pending' : 'paid',
+        notes: 'Seed: pembayaran awal',
+        status: 'paid',
       });
       await financePaymentRepository.save(payment);
     }
 
-    console.log(`  Created finance: ${saved.reference_number} Rp ${saved.amount_received.toLocaleString('id-ID')} (${saved.finance_type})`);
+    const statusLabel = paidAmount >= totalAmount ? 'lunas' : paidAmount > 0 ? `dp Rp ${paidAmount.toLocaleString('id-ID')}` : 'belum dibayar';
+    console.log(`  Created finance: ${saved.reference_number} total Rp ${totalAmount.toLocaleString('id-ID')} (${statusLabel})`);
   }
 
   // ═══════════════════════════════════════════════════════════

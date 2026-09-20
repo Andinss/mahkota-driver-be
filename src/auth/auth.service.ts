@@ -59,6 +59,7 @@ export class AuthService {
         role: {
           permissions: true,
         },
+        driver: true,
       },
     });
 
@@ -111,6 +112,7 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email,
+        driver_id: user.driver?.id || user.driver_id || null,
         role: user.role
           ? {
               id: user.role.id,
@@ -378,6 +380,7 @@ export class AuthService {
         role: {
           permissions: true,
         },
+        driver: true,
       },
     });
 
@@ -385,6 +388,7 @@ export class AuthService {
       id: profile?.id,
       username: profile?.username,
       email: profile?.email,
+      driver_id: profile?.driver?.id || profile?.driver_id || null,
       role: profile?.role
         ? {
             id: profile.role.id,
