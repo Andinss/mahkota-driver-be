@@ -41,10 +41,25 @@ export class RentalsService {
       .orderBy('r.created_at', 'DESC');
 
     if (query?.search) {
-      qb.where(
-        '(r.rental_number ILIKE :search OR driver.first_name ILIKE :search OR driver.last_name ILIKE :search OR vehicle.license_plate ILIKE :search)',
+      qb.andWhere(
+        `(
+          r.rental_number ILIKE :search 
+          OR driver.first_name ILIKE :search 
+          OR driver.last_name ILIKE :search 
+          OR vehicle.license_plate ILIKE :search
+          OR vehicle.merk ILIKE :search
+          OR vehicle.model ILIKE :search
+        )`,
         { search: `%${query.search}%` },
       );
+    }
+
+    if (query?.rental_duration) {
+      qb.andWhere('r.rental_duration = :dur', { dur: query.rental_duration });
+    }
+
+    if (query?.rental_service) {
+      qb.andWhere('r.rental_service = :svc', { svc: query.rental_service });
     }
 
     const [data, total] = await qb
