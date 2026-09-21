@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class RentalQueryDto {
@@ -17,4 +17,12 @@ export class RentalQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(['harian', 'mingguan', 'bulanan', 'tahunan'])
+  rental_duration?: string;
+
+  @IsOptional()
+  @IsEnum(['lepas kunci', 'pakai supir'])
+  rental_service?: string;
 }
