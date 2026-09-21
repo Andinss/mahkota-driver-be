@@ -271,8 +271,7 @@ export class VehiclesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'year', 'transmission', 'licensePlate', 'type', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
-
+      : ['name', 'year', 'licensePlate', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
       .leftJoinAndSelect('v.vendor', 'vendor');
@@ -305,8 +304,6 @@ export class VehiclesService {
       vinNumber: (v) => v.vin_number || '-',
       engineNumber: (v) => v.engine_number || '-',
       id: (v) => v.id || '-',
-      transmission: () => '-',
-      type: (v) => v.pricing_category || '-',
       vendor: (v) => v.vendor?.name || '-',
     };
 
@@ -321,8 +318,6 @@ export class VehiclesService {
       vinNumber: 'VIN Number',
       engineNumber: 'Engine Number',
       id: 'Vehicle ID',
-      transmission: 'Transmission',
-      type: 'Type',
       vendor: 'Vendor',
     };
 
