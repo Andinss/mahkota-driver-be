@@ -211,6 +211,15 @@ export class DriverController {
     return this.driverService.update(employeeId, updateDriverDto, files);
   }
 
+  @Put('status/:employeeId')
+  @Permissions('driver.update.all')
+  async updateStatus(
+    @Param('employeeId') employeeId: string,
+    @Body('is_active') is_active: boolean,
+  ) {
+    return this.driverService.updateStatus(employeeId, is_active);
+  }
+
   @Delete('delete/:employeeId')
   @Permissions('driver.delete.all')
   delete(@Req() req: any) {
