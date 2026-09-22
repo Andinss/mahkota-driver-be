@@ -62,6 +62,9 @@ export class Vehicle {
   })
   pricing_category!: string;
 
+  @Column({ type: 'boolean', default: true })
+  is_active!: boolean;
+
   @Column({ type: 'uuid', nullable: true })
   vendor_id!: string;
 
