@@ -344,6 +344,26 @@ export class VendorVehicleService {
     }
   }
 
+  async updateStatus(id: string, status: 'active' | 'inactive') {
+    const vendor = await this.vendorRepository.findOne({
+      where: { id },
+    });
+
+    if (!vendor) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    await this.vendorRepository.update(id, { status });
+
+    const updated = await this.findByVendorId(id);
+
+    return {
+      success: true,
+      message: `Vendor marked as ${status === 'active' ? 'Active' : 'Inactive'} successfully`,
+      data: updated,
+    };
+  }
+
   async findByVendorId(vendorId: string): Promise<VendorVehicle | null> {
     return this.vendorRepository.findOne({ where: { id: vendorId } });
   }
