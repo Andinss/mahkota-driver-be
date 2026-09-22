@@ -267,6 +267,26 @@ export class VehiclesService {
     }
   }
 
+  async updateStatus(id: string, is_active: boolean) {
+    const vehicle = await this.vehiclesRepository.findOne({
+      where: { id },
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    await this.vehiclesRepository.update(id, { is_active });
+
+    const updated = await this.findByVehicleId(id);
+
+    return {
+      success: true,
+      message: `Vehicle marked as ${is_active ? 'Active' : 'Inactive'} successfully`,
+      data: updated,
+    };
+  }
+
   async exportData(query: VehicleExportDto) {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
@@ -300,6 +320,7 @@ export class VehiclesService {
       dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
       pricingCategory: (v) => v.pricing_category || '-',
       status: (v) => v.status || '-',
+      is_active: (v) => (v.is_active ? 'Active' : 'Inactive'),
       color: (v) => v.color || '-',
       vinNumber: (v) => v.vin_number || '-',
       engineNumber: (v) => v.engine_number || '-',
@@ -314,6 +335,7 @@ export class VehiclesService {
       dailyRate: 'Daily Rate',
       pricingCategory: 'Pricing Category',
       status: 'Status',
+      is_active: 'Active Status',
       color: 'Color',
       vinNumber: 'VIN Number',
       engineNumber: 'Engine Number',

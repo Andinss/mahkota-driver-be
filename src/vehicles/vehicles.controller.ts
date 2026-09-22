@@ -197,6 +197,15 @@ export class VehiclesController {
     return this.vehicleService.update(id, updateVehicleDto, files);
   }
 
+  @Put('status/:id')
+  @Permissions('vehicle.update')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('is_active') is_active: boolean,
+  ) {
+    return this.vehicleService.updateStatus(id, is_active);
+  }
+
   @Delete('delete/:id')
   @Permissions('vehicle.delete')
   delete(@Param('id') id: string) {
