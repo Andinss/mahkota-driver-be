@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { VendorVehicle } from './entities/vendor-vehicle.entity';
 import { Finance } from '../finances/entities/finance.entity';
 import { FinancePayment } from '../finances/entities/finance-payment.entity';
+import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
 import { CreateVendorVehicleDto } from './dto/create-vendor-vehicle.dto';
 import { VendorVehicleQueryDto } from './dto/vendor-vehicle-query.dto';
 import { VendorVehicleExportDto } from './dto/vendor-vehicle-export.dto';
@@ -126,6 +127,23 @@ export class VendorVehicleService {
     for (const row of rows) {
       result[row.vendor_id] = Number(row.total) || 0;
     }
+
+    const dailyRows = await this.vendorRepository.manager
+      .createQueryBuilder()
+      .select('vehicle.vendor_id', 'vendor_id')
+      .addSelect('COALESCE(SUM(dp.amount), 0)', 'total')
+      .from(DailyPayment, 'dp')
+      .innerJoin('vehicles', 'vehicle', 'vehicle.id = dp.vehicle_id')
+      .where('dp.status = :status', { status: 'paid' })
+      .andWhere('vehicle.vendor_id IN (:...vendorIds)', { vendorIds })
+      .groupBy('vehicle.vendor_id')
+      .getRawMany();
+
+    for (const row of dailyRows) {
+      result[row.vendor_id] =
+        (result[row.vendor_id] || 0) + (Number(row.total) || 0);
+    }
+
     return result;
   }
 

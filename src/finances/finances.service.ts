@@ -473,6 +473,11 @@ export class FinancesService {
       .where('f.status != :cancelled', { cancelled: 'cancelled' })
       .getRawOne();
 
+    // Pendapatan dari daily_payments berstatus 'paid'
+    const dailyTotalResult = await this.dataSource.query(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid'",
+    );
+
     // Total bulan ini 
     const monthResult = await this.financesRepository
       .createQueryBuilder('f')
@@ -486,6 +491,10 @@ export class FinancesService {
       )
       .getRawOne();
 
+    const dailyMonthResult = await this.dataSource.query(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid' AND EXTRACT(MONTH FROM payment_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM payment_date) = EXTRACT(YEAR FROM CURRENT_DATE)",
+    );
+
     // Total hari ini 
     const todayResult = await this.financesRepository
       .createQueryBuilder('f')
@@ -493,6 +502,10 @@ export class FinancesService {
       .where('f.status != :cancelled', { cancelled: 'cancelled' })
       .andWhere('f.payment_date = CURRENT_DATE')
       .getRawOne();
+
+    const dailyTodayResult = await this.dataSource.query(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid' AND payment_date = CURRENT_DATE",
+    );
 
     const byMethod = await this.financesRepository
       .createQueryBuilder('f')
@@ -527,13 +540,18 @@ export class FinancesService {
       countByType[row.type || 'unpaid'] = Number(row.count);
     }
 
+    const dailyTotal = Number(dailyTotalResult?.[0]?.total) || 0;
+    const dailyMonth = Number(dailyMonthResult?.[0]?.total) || 0;
+    const dailyToday = Number(dailyTodayResult?.[0]?.total) || 0;
+
     return {
       success: true,
       message: 'Finance summary retrieved successfully',
       data: {
-        total_amount_received: Number(totalResult?.total || 0),
-        total_this_month: Number(monthResult?.total || 0),
-        total_today: Number(todayResult?.total || 0),
+        total_amount_received:
+          Number(totalResult?.total || 0) + dailyTotal,
+        total_this_month: Number(monthResult?.total || 0) + dailyMonth,
+        total_today: Number(todayResult?.total || 0) + dailyToday,
         total_active: totalActive,
         total_inactive: totalInactive,
         total_records: totalRecords,
@@ -603,12 +621,23 @@ export class FinancesService {
       .orderBy('month', 'ASC')
       .getRawMany();
 
+    const dailyRows: Array<{ month: string; total: string }> =
+      await this.dataSource.query(
+        "SELECT EXTRACT(MONTH FROM payment_date) AS month, COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid' AND EXTRACT(YEAR FROM payment_date) = $1 GROUP BY EXTRACT(MONTH FROM payment_date)",
+        [currentYear],
+      );
+
+    const dailyByMonth: Record<number, number> = {};
+    for (const row of dailyRows) {
+      dailyByMonth[Number(row.month)] = Number(row.total) || 0;
+    }
+
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
       const found = rows.find((r) => Number(r.month) === month);
       return {
         month,
-        total: found ? Number(found.total) : 0,
+        total: (found ? Number(found.total) : 0) + (dailyByMonth[month] || 0),
         count: found ? Number(found.count) : 0,
       };
     });
