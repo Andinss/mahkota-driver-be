@@ -89,6 +89,9 @@ export class Driver {
   @Column({ type: 'boolean', default: true })
   willing_to_be_survey!: boolean;
 
+  @Column({ type: 'boolean', default: true })
+  is_active!: boolean;
+
   // step 3
   @Column({ type: 'varchar', length: 255, nullable: true })
   national_id_card!: string;

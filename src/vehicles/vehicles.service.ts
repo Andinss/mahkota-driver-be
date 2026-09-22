@@ -276,12 +276,31 @@ export class VehiclesService {
     }
   }
 
+  async updateStatus(id: string, is_active: boolean) {
+    const vehicle = await this.vehiclesRepository.findOne({
+      where: { id },
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException('Vehicle not found');
+    }
+
+    await this.vehiclesRepository.update(id, { is_active });
+
+    const updated = await this.findByVehicleId(id);
+
+    return {
+      success: true,
+      message: `Vehicle marked as ${is_active ? 'Active' : 'Inactive'} successfully`,
+      data: updated,
+    };
+  }
+
   async exportData(query: VehicleExportDto) {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'year', 'transmission', 'licensePlate', 'type', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
-
+      : ['name', 'year', 'licensePlate', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
       .leftJoinAndSelect('v.vendor', 'vendor');
@@ -310,12 +329,11 @@ export class VehiclesService {
       dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
       pricingCategory: (v) => v.pricing_category || '-',
       status: (v) => v.status || '-',
+      is_active: (v) => (v.is_active ? 'Active' : 'Inactive'),
       color: (v) => v.color || '-',
       vinNumber: (v) => v.vin_number || '-',
       engineNumber: (v) => v.engine_number || '-',
       id: (v) => v.id || '-',
-      transmission: () => '-',
-      type: (v) => v.pricing_category || '-',
       vendor: (v) => v.vendor?.name || '-',
     };
 
@@ -326,12 +344,11 @@ export class VehiclesService {
       dailyRate: 'Daily Rate',
       pricingCategory: 'Pricing Category',
       status: 'Status',
+      is_active: 'Active Status',
       color: 'Color',
       vinNumber: 'VIN Number',
       engineNumber: 'Engine Number',
       id: 'Vehicle ID',
-      transmission: 'Transmission',
-      type: 'Type',
       vendor: 'Vendor',
     };
 

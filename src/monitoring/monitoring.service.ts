@@ -23,12 +23,10 @@ export interface TaskDetail {
   vehicle: {
     name: string;
     year: string;
-    transmission: string;
     plateNumber: string;
     imageUrl: string;
     odometerOut: number;
     fuelLevel: number;
-    type: string;
   };
   location: {
     address: string;
@@ -109,12 +107,10 @@ export class MonitoringService {
       vehicle: {
         name: `${vehicle.merk} ${vehicle.model}`,
         year: vehicle.launching_year?.getFullYear().toString() || '',
-        transmission: 'Automatic',
         plateNumber: vehicle.license_plate,
         imageUrl: '',
         odometerOut: 0,
         fuelLevel: location?.fuel_level ?? 0,
-        type: 'Rental',
       },
       location: {
         address: location
