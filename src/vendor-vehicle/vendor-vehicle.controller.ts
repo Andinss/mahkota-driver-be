@@ -183,6 +183,15 @@ export class VendorVehicleController {
     );
   }
 
+  @Put('status/:id')
+  @Permissions('vendor.update')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'active' | 'inactive',
+  ) {
+    return this.vendorVehicleService.updateStatus(id, status);
+  }
+
   @Delete('delete/:id')
   @Permissions('vendor.delete')
   delete(@Param('id') id: string) {
