@@ -100,6 +100,8 @@ export class DriverService {
 
   async getSummary() {
     const totalDrivers = await this.driversRepository.count();
+    const activeDrivers = await this.driversRepository.count({ where: { is_active: true } });
+    const inactiveDrivers = await this.driversRepository.count({ where: { is_active: false } });
 
     const genderBreakdown = await this.driversRepository
       .createQueryBuilder('d')
@@ -118,6 +120,8 @@ export class DriverService {
       message: 'Driver summary retrieved successfully',
       data: {
         total_drivers: totalDrivers,
+        active_drivers: activeDrivers,
+        inactive_drivers: inactiveDrivers,
         gender_breakdown: genderCount,
       },
     };
@@ -287,6 +291,32 @@ export class DriverService {
     }
   }
 
+  async updateStatus(employeeId: string, is_active: boolean) {
+    let existingDriver = await this.driversRepository.findOne({
+      where: { employee_id: employeeId },
+    });
+
+    if (!existingDriver && /^[0-9a-f-]{36}$/i.test(employeeId)) {
+      existingDriver = await this.driversRepository.findOne({
+        where: { id: employeeId },
+      });
+    }
+
+    if (!existingDriver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    await this.driversRepository.update(existingDriver.id, { is_active });
+
+    const driver = await this.findByEmployeeId(employeeId);
+
+    return {
+      success: true,
+      message: `Driver marked as ${is_active ? 'Active' : 'Inactive'} successfully`,
+      data: driver,
+    };
+  }
+
   async delete(employeeId: string): Promise<{ success: boolean; message: string }> {
     let existingDriver = await this.driversRepository.findOne({
       where: { employee_id: employeeId },
@@ -365,6 +395,7 @@ export class DriverService {
       phone: (d) => d.phone || '-',
       email: (d) => d.email || '-',
       saldo: (d) => String(d.saldo?.balance || 0),
+      is_active: (d) => (d.is_active ? 'Active' : 'Inactive'), 
       gender: (d) => d.gender || '-',
       date_of_birth: (d) => d.date_of_birth ? new Date(d.date_of_birth).toLocaleDateString('id-ID') : '-',
       citizenship: (d) => d.citizenship || '-',
@@ -384,6 +415,7 @@ export class DriverService {
       phone: 'Phone Number',
       email: 'Email',
       saldo: 'Saldo',
+      is_active: 'Status', 
       gender: 'Gender',
       date_of_birth: 'Date of Birth',
       citizenship: 'Citizenship',
