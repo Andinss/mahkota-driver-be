@@ -1,7 +1,7 @@
 import { IsUUID, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class DeductSaldoDto {
+export class RefundKoinDto {
   @IsUUID()
   driver_id!: string;
 

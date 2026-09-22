@@ -5,15 +5,12 @@ import { Role } from './roles/entities/role.entity';
 import { Permission } from './permissions/entities/permission.entity';
 import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { Driver } from './drivers/entities/driver.entity';
-import { Rental } from './rentals/entities/rental.entity';
-import { Finance } from './finances/entities/finance.entity';
-import { FinancePayment } from './finances/entities/finance-payment.entity';
 import { LatePayment } from './late-payments/entities/late-payment.entity';
 import { GpsLocation } from './monitoring/entities/gps-location.entity';
 import { Setting } from './settings/entities/setting.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
-import { DriverSaldo } from './saldo/entities/driver-saldo.entity';
-import { SaldoTransaction } from './saldo/entities/saldo-transaction.entity';
+import { DriverKoin } from './koin/entities/driver-koin.entity';
+import { KoinTransaction } from './koin/entities/koin-transaction.entity';
 import { VendorVehicle } from './vendor-vehicle/entities/vendor-vehicle.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -30,7 +27,7 @@ const modulePermissions: Record<string, string[]> = {
   finance: ['create', 'read', 'update', 'delete', 'approve'],
   late_payment: ['read', 'approve'],
   monitoring: ['read', 'read.all', 'update'],
-  saldo: ['read', 'top_up', 'deduct', 'refund'],
+  koin: ['read', 'top_up', 'deduct', 'refund'],
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
   vendor: ['create', 'read', 'update', 'delete'],
@@ -64,7 +61,7 @@ const rolesData: RoleSeed[] = [
         'driver.create', 'driver.read.own', 'driver.update.own', 'driver.delete.own', 'driver.assign_vehicle',
         'vehicle.read',
         'rental.read', 'rental.create',
-        'saldo.read', 'saldo.top_up',
+        'koin.read', 'koin.top_up',
       ];
       return perms.includes(name);
     },
@@ -97,7 +94,7 @@ const rolesData: RoleSeed[] = [
       const perms = [
         'driver.read.all',
         'finance.read', 'finance.create',
-        'saldo.read', 'saldo.top_up',
+        'koin.read', 'koin.top_up',
         'driver_portal.dashboard', 'driver_portal.payment', 'driver_portal.profile',
       ];
       return perms.includes(name);
@@ -278,14 +275,12 @@ async function seed() {
   const userRepository = app.get<Repository<User>>(getRepositoryToken(User));
   const vehicleRepository = app.get<Repository<Vehicle>>(getRepositoryToken(Vehicle));
   const driverRepository = app.get<Repository<Driver>>(getRepositoryToken(Driver));
-  const rentalRepository = app.get<Repository<Rental>>(getRepositoryToken(Rental));
-  const financeRepository = app.get<Repository<Finance>>(getRepositoryToken(Finance));
   const latePaymentRepository = app.get<Repository<LatePayment>>(getRepositoryToken(LatePayment));
   const gpsRepository = app.get<Repository<GpsLocation>>(getRepositoryToken(GpsLocation));
   const settingRepository = app.get<Repository<Setting>>(getRepositoryToken(Setting));
   const auditRepository = app.get<Repository<AuditLog>>(getRepositoryToken(AuditLog));
-  const driverSaldoRepository = app.get<Repository<DriverSaldo>>(getRepositoryToken(DriverSaldo));
-  const saldoTransactionRepository = app.get<Repository<SaldoTransaction>>(getRepositoryToken(SaldoTransaction));
+  const driverKoinRepository = app.get<Repository<DriverKoin>>(getRepositoryToken(DriverKoin));
+  const koinTransactionRepository = app.get<Repository<KoinTransaction>>(getRepositoryToken(KoinTransaction));
   const vendorVehicleRepository = app.get<Repository<VendorVehicle>>(getRepositoryToken(VendorVehicle));
 
   // ═══════════════════════════════════════════════════════════
@@ -494,212 +489,7 @@ async function seed() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 6. SEED RENTALS
-  // ═══════════════════════════════════════════════════════════
-  console.log('\n── Seeding Rentals ──');
-  const rentalsData = [
-    {
-      driver: createdDrivers[0],
-      vehicle: createdVehicles[0],
-      start_date: new Date('2026-09-01'),
-      end_date: new Date('2026-09-30'),
-      total_duration: 30,
-      daily_rate: 350000,
-      rental_duration: 'bulanan',
-      rental_service: 'lepas kunci',
-    },
-    {
-      driver: createdDrivers[1],
-      vehicle: createdVehicles[1],
-      start_date: new Date('2026-08-20'),
-      end_date: new Date('2026-09-19'),
-      total_duration: 30,
-      daily_rate: 300000,
-      rental_duration: 'bulanan',
-      rental_service: 'pakai supir',
-    },
-    {
-      driver: createdDrivers[2],
-      vehicle: createdVehicles[2],
-      start_date: new Date('2026-08-01'),
-      end_date: new Date('2026-08-31'),
-      total_duration: 30,
-      daily_rate: 500000,
-      rental_duration: 'bulanan',
-      rental_service: 'lepas kunci',
-    },
-    {
-      driver: createdDrivers[3],
-      vehicle: createdVehicles[3],
-      start_date: new Date('2026-09-05'),
-      end_date: new Date('2026-09-12'),
-      total_duration: 7,
-      daily_rate: 280000,
-      rental_duration: 'mingguan',
-      rental_service: 'lepas kunci',
-    },
-  ];
-
-  const createdRentals: Rental[] = [];
-  for (const rData of rentalsData) {
-    const existing = await rentalRepository.findOne({
-      where: {
-        vehicle_id: rData.vehicle.id,
-        start_date: rData.start_date,
-        end_date: rData.end_date,
-      },
-    });
-    if (existing) {
-      console.log(`  Rental already exists: ${existing.rental_number}`);
-      createdRentals.push(existing);
-      continue;
-    }
-    const rental = rentalRepository.create({
-      driver_id: rData.driver.id,
-      vehicle_id: rData.vehicle.id,
-      start_date: rData.start_date,
-      end_date: rData.end_date,
-      total_duration: rData.total_duration,
-      daily_rate: rData.daily_rate,
-      rental_duration: rData.rental_duration,
-      rental_service: rData.rental_service,
-    });
-    const saved = await rentalRepository.save(rental);
-    createdRentals.push(saved);
-    console.log(`  Created rental: ${saved.rental_number} (${rData.driver.first_name} → ${rData.vehicle.merk} ${rData.vehicle.model})`);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // 7. SEED FINANCES
-  // ═══════════════════════════════════════════════════════════
-  console.log('\n── Seeding Finances ──');
-  const financesData = [
-    {
-      payment_date: new Date('2026-08-02'),
-      reference_number: 'PAY/2026/08/0001',
-      payment_method: 'transfer',
-      total_amount: 12000000,
-      amount_received: 5000000,
-      deposit_amount: 5000000,
-      notes: 'DP Rental Avanza - Budi Santoso',
-      payer: 'Budi Santoso',
-      driver: createdDrivers[0],
-      finance_type: 'paid',
-      rentals: [createdRentals[0]],
-      is_active: true,
-      initialPayment: 5000000,
-    },
-    {
-      payment_date: new Date('2026-08-06'),
-      reference_number: 'PAY/2026/08/0002',
-      payment_method: 'cash',
-      total_amount: 10750000,
-      amount_received: 10750000,
-      deposit_amount: 0,
-      notes: 'Full payment rental Brio - Andi Pratama',
-      payer: 'Andi Pratama',
-      driver: createdDrivers[1],
-      finance_type: 'paid',
-      rentals: [createdRentals[1]],
-      is_active: true,
-      initialPayment: 10750000,
-    },
-    {
-      payment_date: new Date('2026-08-12'),
-      reference_number: 'PAY/2026/08/0003',
-      payment_method: 'transfer',
-      total_amount: 15000000,
-      amount_received: 3000000,
-      deposit_amount: 3000000,
-      notes: 'Partial payment rental Innova - Siti Rahayu',
-      payer: 'Siti Rahayu',
-      driver: createdDrivers[2],
-      finance_type: 'unpaid',
-      rentals: [createdRentals[2]],
-      is_active: true,
-      initialPayment: 3000000,
-    },
-    {
-      payment_date: new Date('2026-08-20'),
-      reference_number: 'PAY/2026/08/0004',
-      payment_method: 'transfer',
-      total_amount: 2500000,
-      amount_received: 1000000,
-      deposit_amount: 1000000,
-      notes: 'Partial payment for Xenia rental - Dedi Kurniawan',
-      payer: 'Dedi Kurniawan',
-      driver: createdDrivers[3],
-      finance_type: 'unpaid',
-      rentals: [createdRentals[3]],
-      is_active: true,
-      initialPayment: 1000000,
-    },
-    {
-      payment_date: new Date('2026-09-01'),
-      reference_number: 'PAY/2026/09/0005',
-      payment_method: 'transfer',
-      total_amount: 10500000,
-      amount_received: 0,
-      deposit_amount: 0,
-      notes: 'Tagihan bulanan Avanza September - Budi Santoso',
-      payer: 'Budi Santoso',
-      driver: createdDrivers[0],
-      finance_type: 'unpaid',
-      rentals: [createdRentals[0]],
-      is_active: true,
-      initialPayment: 0,
-    },
-  ];
-
-  const createdFinances: Finance[] = [];
-  const financePaymentRepository = app.get<Repository<FinancePayment>>(getRepositoryToken(FinancePayment));
-  for (const fData of financesData) {
-    const { rentals: rentalList, initialPayment, ...financeFields } = fData;
-    const totalAmount = Number((financeFields as any).total_amount) || 0;
-    const paidAmount = Number(initialPayment) || 0;
-
-    const existing = await financeRepository.findOne({
-      where: { reference_number: (financeFields as any).reference_number },
-    });
-    if (existing) {
-      console.log(`  Finance already exists: ${existing.reference_number}`);
-      createdFinances.push(existing);
-      continue;
-    }
-
-    const finance = financeRepository.create({
-      ...financeFields,
-      total_amount: totalAmount,
-      amount_received: paidAmount,
-      status: paidAmount >= totalAmount ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'unpaid',
-      payment_date: new Date(fData.payment_date),
-    });
-    if (rentalList && rentalList.length > 0) {
-      finance.rentals = rentalList.map((r) => ({ id: r.id } as any));
-    }
-    const saved = await financeRepository.save(finance);
-    createdFinances.push(saved);
-
-    if (paidAmount > 0) {
-      const payment = financePaymentRepository.create({
-        finance_id: saved.id,
-        driver_id: (financeFields as any).driver.id,
-        amount: paidAmount,
-        payment_method: (financeFields as any).payment_method,
-        payment_date: new Date(fData.payment_date),
-        reference_number: (financeFields as any).reference_number,
-        notes: 'Seed: pembayaran awal',
-        status: 'paid',
-      });
-      await financePaymentRepository.save(payment);
-    }
-
-    const statusLabel = paidAmount >= totalAmount ? 'lunas' : paidAmount > 0 ? `dp Rp ${paidAmount.toLocaleString('id-ID')}` : 'belum dibayar';
-    console.log(`  Created finance: ${saved.reference_number} total Rp ${totalAmount.toLocaleString('id-ID')} (${statusLabel})`);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // 8. SEED LATE PAYMENTS
+  // 6. SEED LATE PAYMENTS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Late Payments ──');
   const latePaymentsData = [
@@ -715,7 +505,6 @@ async function seed() {
       justification_reason: 'Salary delayed by employer',
       message: 'Mohon maaf keterlambatan, gaji akan cair tanggal 28',
       status: 'pending',
-      rentals: [createdRentals[3]],
     },
     {
       driver: createdDrivers[2],
@@ -730,13 +519,10 @@ async function seed() {
       message: 'Dana akan segera ditransfer',
       status: 'approved',
       admin_note: 'Disetujui dengan catatan pembayaran bertahap',
-      rentals: [createdRentals[2]],
     },
   ];
 
   for (const lpData of latePaymentsData) {
-    const { rentals: rentalList, ...lpFields } = lpData;
-
     const existing = await latePaymentRepository.findOne({
       where: {
         driver_id: lpData.driver.id,
@@ -750,24 +536,25 @@ async function seed() {
     }
 
     const latePayment = latePaymentRepository.create({
-      ...lpFields,
       driver_id: lpData.driver.id,
+      driver_name: lpData.driver_name,
+      vehicle: lpData.vehicle,
+      plate: lpData.plate,
+      amount: lpData.amount,
+      due_date: lpData.due_date,
+      payment_date: lpData.payment_date,
+      justification: lpData.justification,
+      justification_reason: lpData.justification_reason,
+      message: lpData.message,
+      status: lpData.status,
+      admin_note: (lpData as any).admin_note || undefined,
     });
-    const saved = await latePaymentRepository.save(latePayment);
-
-    if (rentalList && rentalList.length > 0) {
-      await latePaymentRepository
-        .createQueryBuilder()
-        .relation(LatePayment, 'rentals')
-        .of(saved)
-        .add(rentalList.map((r) => r.id));
-    }
-
+    await latePaymentRepository.save(latePayment);
     console.log(`  Created late payment: ${lpData.driver_name} Rp ${lpData.amount.toLocaleString('id-ID')} [${lpData.status}]`);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 9. SEED GPS LOCATIONS
+  // 7. SEED GPS LOCATIONS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding GPS Locations ──');
   const gpsData = [
@@ -806,10 +593,10 @@ async function seed() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 10. SEED DRIVER SALDO
+  // 8. SEED DRIVER KOIN
   // ═══════════════════════════════════════════════════════════
-  console.log('\n── Seeding Driver Saldo ──');
-  const saldoData = [
+  console.log('\n── Seeding Driver Koin ──');
+  const koinData = [
     { driver: createdDrivers[0], balance: 5000000 },
     { driver: createdDrivers[1], balance: 3000000 },
     { driver: createdDrivers[2], balance: 7500000 },
@@ -817,7 +604,7 @@ async function seed() {
     { driver: createdDrivers[4], balance: 2000000 },
   ];
 
-  const saldoLedger: {
+  const koinLedger: {
     driver: Driver;
     txType: 'top_up' | 'rental_payment' | 'refund';
     amount: number;
@@ -829,48 +616,48 @@ async function seed() {
     { driver: createdDrivers[0], txType: 'top_up', amount: 5000000, balanceBefore: 0, balanceAfter: 5000000, notes: 'Initial balance seed' },
     { driver: createdDrivers[1], txType: 'top_up', amount: 3000000, balanceBefore: 0, balanceAfter: 3000000, notes: 'Initial balance seed' },
     { driver: createdDrivers[2], txType: 'top_up', amount: 7500000, balanceBefore: 0, balanceAfter: 7500000, notes: 'Initial balance seed' },
-    { driver: createdDrivers[3], txType: 'refund', amount: 500000, balanceBefore: 0, balanceAfter: 500000, referenceId: createdRentals[3]?.id, notes: 'Refund ke saldo' },
+    { driver: createdDrivers[3], txType: 'refund', amount: 500000, balanceBefore: 0, balanceAfter: 500000, notes: 'Refund koin' },
     { driver: createdDrivers[4], txType: 'top_up', amount: 2000000, balanceBefore: 0, balanceAfter: 2000000, notes: 'Initial balance seed' },
   ];
 
-  for (const sData of saldoData) {
-    let saldo = await driverSaldoRepository.findOne({
+  for (const sData of koinData) {
+    let koin = await driverKoinRepository.findOne({
       where: { driver_id: sData.driver.id },
     });
-    if (saldo) {
-      console.log(`  Saldo already exists for driver: ${sData.driver.first_name}, resetting balance`);
-      saldo.balance = sData.balance;
-      await driverSaldoRepository.save(saldo);
+    if (koin) {
+      console.log(`  Koin already exists for driver: ${sData.driver.first_name}, resetting balance`);
+      koin.balance = sData.balance;
+      await driverKoinRepository.save(koin);
     } else {
-      saldo = driverSaldoRepository.create({
+      koin = driverKoinRepository.create({
         driver_id: sData.driver.id,
         balance: sData.balance,
       });
-      saldo = await driverSaldoRepository.save(saldo);
-      console.log(`  Created saldo: ${sData.driver.first_name} Rp ${sData.balance.toLocaleString('id-ID')}`);
+      koin = await driverKoinRepository.save(koin);
+      console.log(`  Created koin: ${sData.driver.first_name} Rp ${sData.balance.toLocaleString('id-ID')}`);
     }
   }
 
-  for (const tx of saldoLedger) {
-    const saldo = await driverSaldoRepository.findOne({
+  for (const tx of koinLedger) {
+    const koin = await driverKoinRepository.findOne({
       where: { driver_id: tx.driver.id },
     });
-    const existingTx = await saldoTransactionRepository.findOne({
+    const existingTx = await koinTransactionRepository.findOne({
       where: {
         driver_id: tx.driver.id,
-        driver_saldo_id: saldo?.id || undefined,
+        driver_saldo_id: koin?.id || undefined,
         type: tx.txType,
         amount: tx.amount,
         ...(tx.referenceId ? { reference_id: tx.referenceId } : {}),
       },
     });
     if (existingTx) {
-      console.log(`  Saldo ${tx.txType} already exists: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')}`);
+      console.log(`  Koin ${tx.txType} already exists: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')}`);
       continue;
     }
-    const entry = saldoTransactionRepository.create({
+    const entry = koinTransactionRepository.create({
       driver_id: tx.driver.id,
-      driver_saldo_id: saldo?.id || undefined,
+      driver_saldo_id: koin?.id || undefined,
       type: tx.txType,
       amount: tx.amount,
       balance_before: tx.balanceBefore,
@@ -878,12 +665,12 @@ async function seed() {
       reference_id: tx.referenceId || undefined,
       notes: tx.notes,
     });
-    await saldoTransactionRepository.save(entry);
-    console.log(`  Saldo ${tx.txType}: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')} → saldo ${tx.balanceAfter.toLocaleString('id-ID')}`);
+    await koinTransactionRepository.save(entry);
+    console.log(`  Koin ${tx.txType}: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')} → koin ${tx.balanceAfter.toLocaleString('id-ID')}`);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 11. SEED SETTINGS
+  // 9. SEED SETTINGS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Settings ──');
   for (const sData of settingsData) {
@@ -898,15 +685,12 @@ async function seed() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 12. SEED AUDIT LOGS
+  // 10. SEED AUDIT LOGS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Audit Logs ──');
   const auditData = [
     { username: 'admin', action: 'CREATE_DRIVER', target: 'driver/DRV-001', details: 'Created driver Budi Santoso', status: 'success' },
     { username: 'admin', action: 'CREATE_VEHICLE', target: 'vehicle/B 1234 ABC', details: 'Created vehicle Toyota Avanza', status: 'success' },
-    { username: 'admin', action: 'CREATE_RENTAL', target: `rental/${createdRentals[0]?.rental_number || 'RENT/001'}`, details: 'Created rental for Budi Santoso', status: 'success' },
-    { username: 'finance1', action: 'CREATE_FINANCE', target: `finance/${createdFinances[0]?.id || ''}`, details: 'Created finance PAY/2026/08/0001', status: 'success' },
-    { username: 'admin', action: 'UPDATE_RENTAL_STATUS', target: `rental/${createdRentals[1]?.rental_number || 'RENT/002'}`, details: 'Updated payment status to paid', status: 'success' },
   ];
 
   let createdAuditLogs = 0;

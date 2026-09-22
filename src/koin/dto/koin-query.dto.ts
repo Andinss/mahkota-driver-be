@@ -1,7 +1,7 @@
 import { IsOptional, IsString, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class SaldoQueryDto {
+export class KoinQueryDto {
   @IsOptional()
   @IsInt()
   @Min(1)

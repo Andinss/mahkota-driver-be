@@ -1,7 +1,7 @@
 import { IsUUID, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class RefundSaldoDto {
+export class TopUpKoinDto {
   @IsUUID()
   driver_id!: string;
 
@@ -11,10 +11,10 @@ export class RefundSaldoDto {
   amount!: number;
 
   @IsOptional()
-  @IsUUID()
-  rental_id?: string;
+  @IsString()
+  notes?: string;
 
   @IsOptional()
   @IsString()
-  notes?: string;
+  reference_number?: string;
 }

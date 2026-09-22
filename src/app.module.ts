@@ -22,14 +22,19 @@ import { LatePaymentsModule } from './late-payments/late-payments.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
-import { SaldoModule } from './saldo/saldo.module';
+import { KoinModule } from './koin/koin.module';
+import { GpsidModule } from './gpsid/gpsid.module';
 import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
+import { DailyPaymentsModule } from './daily-payments/daily-payments.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+
+    ScheduleModule.forRoot(),
 
     ThrottlerModule.forRoot([{
       ttl: 60000,
@@ -62,8 +67,10 @@ import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
     SettingsModule,
     AuditModule,
     MonitoringModule,
-    SaldoModule,
+    KoinModule,
     VendorVehicleModule,
+    GpsidModule,
+    DailyPaymentsModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [AppService, VehicleAssignmentService, {

@@ -43,34 +43,6 @@ export class Finance {
   })
   amount_received!: number;
 
-  @Column('decimal', {
-    precision: 14,
-    scale: 2,
-    default: 0,
-    transformer: {
-      to: (value: number) => value,
-      from: (value: string | null) => (value ? parseFloat(value) : 0),
-    },
-  })
-  deposit_amount!: number;
-
-  @Column('decimal', {
-    precision: 14,
-    scale: 2,
-    default: 0,
-    transformer: {
-      to: (value: number) => value,
-      from: (value: string | null) => (value ? parseFloat(value) : 0),
-    },
-  })
-  total_amount!: number;
-
-  /**
-   * Jumlah cicilan pembayaran tagihan (1, 2, atau 4 kali).
-   */
-  @Column('int', { default: 1 })
-  payment_terms!: number;
-
   /**
    * Admin fee join (biaya admin saat akun pertama kali melakukan sewa).
    * Otomatis dihitung berdasarkan jenis mobil: Reguler Rp 500.000, Premium Rp 700.000.

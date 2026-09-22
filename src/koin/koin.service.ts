@@ -7,48 +7,48 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { QueryRunner } from 'typeorm';
-import { DriverSaldo } from './entities/driver-saldo.entity';
-import { SaldoTransaction } from './entities/saldo-transaction.entity';
+import { DriverKoin } from './entities/driver-koin.entity';
+import { KoinTransaction } from './entities/koin-transaction.entity';
 import { Driver } from '../drivers/entities/driver.entity';
-import { TopUpSaldoDto } from './dto/top-up-saldo.dto';
-import { DeductSaldoDto } from './dto/deduct-saldo.dto';
-import { RefundSaldoDto } from './dto/refund-saldo.dto';
-import { SaldoQueryDto } from './dto/saldo-query.dto';
+import { TopUpKoinDto } from './dto/top-up-koin.dto';
+import { DeductKoinDto } from './dto/deduct-koin.dto';
+import { RefundKoinDto } from './dto/refund-koin.dto';
+import { KoinQueryDto } from './dto/koin-query.dto';
 
 @Injectable()
-export class SaldoService {
+export class KoinService {
   constructor(
-    @InjectRepository(DriverSaldo)
-    private readonly driverSaldoRepository: Repository<DriverSaldo>,
-    @InjectRepository(SaldoTransaction)
-    private readonly transactionRepository: Repository<SaldoTransaction>,
+    @InjectRepository(DriverKoin)
+    private readonly driverKoinRepository: Repository<DriverKoin>,
+    @InjectRepository(KoinTransaction)
+    private readonly transactionRepository: Repository<KoinTransaction>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
     private readonly dataSource: DataSource,
   ) {}
 
-  private async findSaldoForUpdate(
+  private async findKoinForUpdate(
     queryRunner: QueryRunner,
     driverId: string,
-  ): Promise<DriverSaldo | null> {
+  ): Promise<DriverKoin | null> {
     const rows = await queryRunner.query(
       'SELECT id, driver_id, balance, created_at, updated_at FROM driver_saldo WHERE driver_id = $1 FOR UPDATE',
       [driverId],
     );
     if (!rows || rows.length === 0) return null;
-    return this.driverSaldoRepository.create(rows[0] as Partial<DriverSaldo>);
+    return this.driverKoinRepository.create(rows[0] as Partial<DriverKoin>);
   }
 
   async getBalance(driverId: string) {
-    const saldo = await this.driverSaldoRepository.findOne({
+    const koin = await this.driverKoinRepository.findOne({
       where: { driver_id: driverId },
       relations: { driver: true },
     });
 
-    if (!saldo) {
+    if (!koin) {
       return {
         success: true,
-        message: 'Driver saldo not found, balance is 0',
+        message: 'Driver koin not found, balance is 0',
         data: {
           driver_id: driverId,
           balance: 0,
@@ -58,20 +58,20 @@ export class SaldoService {
 
     return {
       success: true,
-      message: 'Driver balance retrieved successfully',
+      message: 'Driver koin retrieved successfully',
       data: {
-        id: saldo.id,
-        driver_id: saldo.driver_id,
-        driver_name: saldo.driver
-          ? `${saldo.driver.first_name} ${saldo.driver.last_name}`
+        id: koin.id,
+        driver_id: koin.driver_id,
+        driver_name: koin.driver
+          ? `${koin.driver.first_name} ${koin.driver.last_name}`
           : '',
-        balance: Number(saldo.balance),
-        updated_at: saldo.updated_at,
+        balance: Number(koin.balance),
+        updated_at: koin.updated_at,
       },
     };
   }
 
-  async topUp(dto: TopUpSaldoDto) {
+  async topUp(dto: TopUpKoinDto) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -84,31 +84,33 @@ export class SaldoService {
         throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
       }
 
-      let saldo = await this.findSaldoForUpdate(queryRunner, dto.driver_id);
+      let koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
 
-      const balanceBefore = saldo ? Number(saldo.balance) : 0;
+      const balanceBefore = koin ? Number(koin.balance) : 0;
       const balanceAfter = balanceBefore + dto.amount;
 
-      if (!saldo) {
-        saldo = this.driverSaldoRepository.create({
+      if (!koin) {
+        koin = this.driverKoinRepository.create({
           driver_id: dto.driver_id,
           balance: dto.amount,
         });
-        saldo = await queryRunner.manager.save(saldo);
+        koin = await queryRunner.manager.save(koin);
       } else {
-        saldo.balance = balanceAfter;
-        await queryRunner.manager.save(saldo);
+        koin.balance = balanceAfter;
+        await queryRunner.manager.save(koin);
       }
+
+      const referenceNumber = dto.reference_number || `KN-${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 
       const transaction = this.transactionRepository.create({
         driver_id: dto.driver_id,
-        driver_saldo_id: saldo.id,
+        driver_saldo_id: koin.id,
         type: 'top_up',
         amount: dto.amount,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
-        reference_number: dto.reference_number || undefined,
-        notes: dto.notes || `Top up saldo Rp ${dto.amount.toLocaleString('id-ID')}`,
+        reference_number: referenceNumber,
+        notes: dto.notes || `Top up koin Rp ${dto.amount.toLocaleString('id-ID')}`,
       });
       await queryRunner.manager.save(transaction);
 
@@ -116,26 +118,27 @@ export class SaldoService {
 
       return {
         success: true,
-        message: 'Saldo top-up successful',
+        message: 'Koin top-up successful',
         data: {
           driver_id: dto.driver_id,
           amount: dto.amount,
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           transaction_id: transaction.id,
+          reference_number: referenceNumber,
         },
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Failed to top-up saldo:', error);
+      console.error('Failed to top-up koin:', error);
       if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException('Failed to top-up saldo');
+      throw new InternalServerErrorException('Failed to top-up koin');
     } finally {
       await queryRunner.release();
     }
   }
 
-  async deduct(dto: DeductSaldoDto) {
+  async deduct(dto: DeductKoinDto) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -148,29 +151,29 @@ export class SaldoService {
         throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
       }
 
-      const saldo = await this.findSaldoForUpdate(queryRunner, dto.driver_id);
+      const koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
 
-      if (!saldo || Number(saldo.balance) < dto.amount) {
+      if (!koin || Number(koin.balance) < dto.amount) {
         throw new BadRequestException(
-          `Saldo tidak mencukupi. Saldo saat ini: Rp ${Number(saldo?.balance || 0).toLocaleString('id-ID')}, dibutuhkan: Rp ${dto.amount.toLocaleString('id-ID')}`,
+          `Koin tidak mencukupi. Koin saat ini: Rp ${Number(koin?.balance || 0).toLocaleString('id-ID')}, dibutuhkan: Rp ${dto.amount.toLocaleString('id-ID')}`,
         );
       }
 
-      const balanceBefore = Number(saldo.balance);
+      const balanceBefore = Number(koin.balance);
       const balanceAfter = balanceBefore - dto.amount;
 
-      saldo.balance = balanceAfter;
-      await queryRunner.manager.save(saldo);
+      koin.balance = balanceAfter;
+      await queryRunner.manager.save(koin);
 
       const transaction = this.transactionRepository.create({
         driver_id: dto.driver_id,
-        driver_saldo_id: saldo.id,
+        driver_saldo_id: koin.id,
         type: 'rental_payment',
         amount: dto.amount,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         reference_id: dto.rental_id || undefined,
-        notes: dto.notes || `Pembayaran rental dari saldo`,
+        notes: dto.notes || `Pembayaran rental dari koin`,
       });
       await queryRunner.manager.save(transaction);
 
@@ -178,7 +181,7 @@ export class SaldoService {
 
       return {
         success: true,
-        message: 'Saldo deduction successful',
+        message: 'Koin deduction successful',
         data: {
           driver_id: dto.driver_id,
           amount: dto.amount,
@@ -189,15 +192,15 @@ export class SaldoService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Failed to deduct saldo:', error);
+      console.error('Failed to deduct koin:', error);
       if (error instanceof NotFoundException || error instanceof BadRequestException) throw error;
-      throw new InternalServerErrorException('Failed to deduct saldo');
+      throw new InternalServerErrorException('Failed to deduct koin');
     } finally {
       await queryRunner.release();
     }
   }
 
-  async refund(dto: RefundSaldoDto) {
+  async refund(dto: RefundKoinDto) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -210,31 +213,31 @@ export class SaldoService {
         throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
       }
 
-      let saldo = await this.findSaldoForUpdate(queryRunner, dto.driver_id);
+      let koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
 
-      const balanceBefore = saldo ? Number(saldo.balance) : 0;
+      const balanceBefore = koin ? Number(koin.balance) : 0;
       const balanceAfter = balanceBefore + dto.amount;
 
-      if (!saldo) {
-        saldo = this.driverSaldoRepository.create({
+      if (!koin) {
+        koin = this.driverKoinRepository.create({
           driver_id: dto.driver_id,
           balance: dto.amount,
         });
-        saldo = await queryRunner.manager.save(saldo);
+        koin = await queryRunner.manager.save(koin);
       } else {
-        saldo.balance = balanceAfter;
-        await queryRunner.manager.save(saldo);
+        koin.balance = balanceAfter;
+        await queryRunner.manager.save(koin);
       }
 
       const transaction = this.transactionRepository.create({
         driver_id: dto.driver_id,
-        driver_saldo_id: saldo.id,
+        driver_saldo_id: koin.id,
         type: 'refund',
         amount: dto.amount,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         reference_id: dto.rental_id || undefined,
-        notes: dto.notes || `Refund ke saldo`,
+        notes: dto.notes || `Refund ke koin`,
       });
       await queryRunner.manager.save(transaction);
 
@@ -242,7 +245,7 @@ export class SaldoService {
 
       return {
         success: true,
-        message: 'Saldo refund successful',
+        message: 'Koin refund successful',
         data: {
           driver_id: dto.driver_id,
           amount: dto.amount,
@@ -253,15 +256,64 @@ export class SaldoService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Failed to refund saldo:', error);
+      console.error('Failed to refund koin:', error);
       if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException('Failed to refund saldo');
+      throw new InternalServerErrorException('Failed to refund koin');
     } finally {
       await queryRunner.release();
     }
   }
 
-  async getTransactions(driverId: string, query?: SaldoQueryDto) {
+  async getAllTransactions(query?: KoinQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 20;
+    const skip = (page - 1) * limit;
+
+    const qb = this.transactionRepository
+      .createQueryBuilder('t')
+      .leftJoinAndSelect('t.driver', 'driver')
+      .orderBy('t.created_at', 'DESC');
+
+    if (query?.type) {
+      qb.andWhere('t.type = :type', { type: query.type });
+    }
+
+    const [data, total] = await qb
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      success: true,
+      message: 'Koin transactions retrieved successfully',
+      data: data.map((tx) => ({
+        id: tx.id,
+        driver_id: tx.driver_id,
+        driver_name: tx.driver
+          ? `${tx.driver.first_name} ${tx.driver.last_name}`.trim()
+          : '',
+        driver_employee_id: tx.driver?.employee_id || null,
+        type: tx.type,
+        amount: Number(tx.amount),
+        balance_before: Number(tx.balance_before),
+        balance_after: Number(tx.balance_after),
+        reference_id: tx.reference_id,
+        reference_number: tx.reference_number,
+        notes: tx.notes,
+        created_at: tx.created_at,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
+  }
+
+  async getTransactions(driverId: string, query?: KoinQueryDto) {
     const driver = await this.driversRepository.findOne({
       where: { id: driverId },
     });
@@ -292,9 +344,14 @@ export class SaldoService {
 
     return {
       success: true,
-      message: 'Saldo transactions retrieved successfully',
+      message: 'Koin transactions retrieved successfully',
       data: data.map((tx) => ({
         id: tx.id,
+        driver_id: tx.driver_id,
+        driver_name: tx.driver
+          ? `${tx.driver.first_name} ${tx.driver.last_name}`.trim()
+          : '',
+        driver_employee_id: tx.driver?.employee_id || null,
         type: tx.type,
         amount: Number(tx.amount),
         balance_before: Number(tx.balance_before),
@@ -313,13 +370,13 @@ export class SaldoService {
     };
   }
 
-  async getSaldoSummary() {
-    const totalBalance = await this.driverSaldoRepository
+  async getKoinSummary() {
+    const totalBalance = await this.driverKoinRepository
       .createQueryBuilder('s')
       .select('COALESCE(SUM(s.balance), 0)', 'total')
       .getRawOne();
 
-    const totalDrivers = await this.driverSaldoRepository.count();
+    const totalDrivers = await this.driverKoinRepository.count();
 
     const totalTopUp = await this.transactionRepository
       .createQueryBuilder('t')
@@ -341,10 +398,10 @@ export class SaldoService {
 
     return {
       success: true,
-      message: 'Saldo summary retrieved successfully',
+      message: 'Koin summary retrieved successfully',
       data: {
         total_balance: Number(totalBalance?.total || 0),
-        total_drivers_with_saldo: totalDrivers,
+        total_drivers_with_koin: totalDrivers,
         total_top_up: Number(totalTopUp?.total || 0),
         total_deductions: Number(totalDeductions?.total || 0),
         total_refunds: Number(totalRefunds?.total || 0),

@@ -26,39 +26,10 @@ export class AddFinanceDto {
   @IsNotEmpty()
   payment_method!: string;
 
-  /**
-   * Jumlah pembayaran awal / cicilan pertama.
-   * Dalam model tagihan baru, ini adalah nominal pertama yang dibayarkan saat
-   * finance dibuat. Jika `total_amount` tidak diisi (backward compat), maka
-   * dianggap total tagihan sama dengan `amount_received`.
-   */
   @IsNumber()
   @IsPositive()
   @IsOptional()
   amount_received?: number;
-
-  @IsOptional()
-  @IsNumber()
-  deposit_amount?: number;
-
-  /**
-   * Total nominal tagihan finance (kewajiban driver).
-   * Backend menghitung `remaining = total_amount - sum(pembayaran paid)`.
-   */
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  total_amount?: number;
-
-  /**
-   * Opsi pembayaran/cicilan tagihan: 1, 2, atau 4 kali.
-   */
-  @IsOptional()
-  @IsIn([1, 2, 4])
-  @Transform(({ value }) =>
-    value === undefined || value === null ? undefined : Number(value),
-  )
-  payment_terms?: number;
 
   /**
    * Admin fee join (biaya admin saat akun pertama kali melakukan sewa).
@@ -82,13 +53,6 @@ export class AddFinanceDto {
   @IsNotEmpty()
   driver_id!: string;
 
-  /**
-   * Kondisi awal yang diinginkan admin saat finance dibuat:
-   * - 'unpaid'  -> tidak ada pembayaran awal
-   * - 'paid'    -> `amount_received` tercatat sebagai pembayaran lunas (status paid)
-   * - 'pending' -> `amount_received` tercatat sebagai pembayaran pending (menunggu verifikasi)
-   * Backend tetap menghitung status final secara konsisten terhadap nominal.
-   */
   @IsOptional()
   @IsEnum(['paid', 'unpaid', 'pending'])
   finance_type?: string;

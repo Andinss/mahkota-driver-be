@@ -64,6 +64,12 @@ export class VehiclesController {
     return this.vehicleService.findDetailById(id);
   }
 
+  @Get('sync-gpsid')
+  @Permissions('vehicle.read')
+  async syncFromGpsid() {
+    return this.vehicleService.fetchVehiclesFromGpsid();
+  }
+
   @Get(':id')
   @Permissions('vehicle.read')
   findOne(@Param('id') id: string) {

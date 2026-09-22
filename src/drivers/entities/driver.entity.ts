@@ -10,7 +10,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
-import { DriverSaldo } from '../../saldo/entities/driver-saldo.entity';
+import { DriverKoin } from '../../koin/entities/driver-koin.entity';
 import { Rental } from '../../rentals/entities/rental.entity';
 
 @Entity('drivers')
@@ -109,8 +109,8 @@ export class Driver {
   @JoinColumn({ name: 'created_by_id' })
   created_by!: User;
 
-  @OneToOne(() => DriverSaldo, (saldo) => saldo.driver)
-  saldo!: DriverSaldo;
+  @OneToOne(() => DriverKoin, (koin) => koin.driver)
+  koin!: DriverKoin;
 
   @OneToMany(() => Rental, (rental) => rental.driver)
   rentals!: Rental[];

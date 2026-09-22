@@ -9,10 +9,10 @@ import {
   OneToMany,
 } from 'typeorm';
 import { Driver } from '../../drivers/entities/driver.entity';
-import { SaldoTransaction } from './saldo-transaction.entity';
+import { KoinTransaction } from './koin-transaction.entity';
 
 @Entity('driver_saldo')
-export class DriverSaldo {
+export class DriverKoin {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -26,8 +26,8 @@ export class DriverSaldo {
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   balance!: number;
 
-  @OneToMany(() => SaldoTransaction, (tx) => tx.driver_saldo)
-  transactions!: SaldoTransaction[];
+  @OneToMany(() => KoinTransaction, (tx) => tx.driver_saldo)
+  transactions!: KoinTransaction[];
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at!: Date;

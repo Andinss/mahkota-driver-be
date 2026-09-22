@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Driver } from './entities/driver.entity';
-import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
+import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
@@ -20,8 +20,8 @@ export class DriverService {
   constructor(
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
-    @InjectRepository(DriverSaldo)
-    private readonly driverSaldoRepository: Repository<DriverSaldo>,
+    @InjectRepository(DriverKoin)
+    private readonly driverKoinRepository: Repository<DriverKoin>,
   ) {}
 
   async findAll(query?: DriverQueryDto) {
@@ -32,7 +32,7 @@ export class DriverService {
     const qb = this.driversRepository
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
-      .leftJoinAndSelect('d.saldo', 'saldo')
+.leftJoinAndSelect('d.koin', 'koin')
       .leftJoinAndSelect('d.rentals', 'rentals')
       .leftJoinAndSelect('rentals.vehicle', 'vehicle')
       .orderBy('d.created_at', 'DESC');
@@ -161,15 +161,15 @@ export class DriverService {
       } as unknown as Driver);
       const result = await this.driversRepository.save(driver);
 
-      const existingSaldo = await this.driverSaldoRepository.findOne({
+      const existingKoin = await this.driverKoinRepository.findOne({
         where: { driver_id: result.id },
       });
-      if (!existingSaldo) {
-        const saldo = this.driverSaldoRepository.create({
+      if (!existingKoin) {
+        const koin = this.driverKoinRepository.create({
           driver_id: result.id,
           balance: 0,
         });
-        await this.driverSaldoRepository.save(saldo);
+        await this.driverKoinRepository.save(koin);
       }
 
       return {
@@ -335,10 +335,10 @@ export class DriverService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'employee_id', 'phone', 'email', 'saldo'];
+      : ['name', 'employee_id', 'phone', 'email', 'koin'];
 
     const qb = this.driversRepository.createQueryBuilder('d')
-      .leftJoinAndSelect('d.saldo', 'saldo');
+      .leftJoinAndSelect('d.koin', 'koin');
 
     if (query.search) {
       qb.where(
@@ -364,7 +364,7 @@ export class DriverService {
       phoneNumber: (d) => d.phone || '-',
       phone: (d) => d.phone || '-',
       email: (d) => d.email || '-',
-      saldo: (d) => String(d.saldo?.balance || 0),
+      koin: (d) => String(d.koin?.balance || 0),
       gender: (d) => d.gender || '-',
       date_of_birth: (d) => d.date_of_birth ? new Date(d.date_of_birth).toLocaleDateString('id-ID') : '-',
       citizenship: (d) => d.citizenship || '-',
@@ -383,7 +383,7 @@ export class DriverService {
       phoneNumber: 'Phone Number',
       phone: 'Phone Number',
       email: 'Email',
-      saldo: 'Saldo',
+      koin: 'Koin',
       gender: 'Gender',
       date_of_birth: 'Date of Birth',
       citizenship: 'Citizenship',
