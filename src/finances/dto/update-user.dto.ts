@@ -25,10 +25,6 @@ export class UpdateFinanceDto {
   amount_received?: string;
 
   @IsOptional()
-  @IsString()
-  deposit_amount?: string;
-
-  @IsOptional()
   @IsEnum(['paid', 'unpaid', 'pending'])
   finance_type?: string;
 

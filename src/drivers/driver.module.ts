@@ -3,12 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DriverService } from './driver.service';
 import { DriverController } from './driver.controller';
 import { Driver } from './entities/driver.entity';
-import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
+import { DriverKoin } from '../koin/entities/driver-koin.entity';
 
 @Module({
   providers: [DriverService],
   controllers: [DriverController],
-  imports: [TypeOrmModule.forFeature([Driver, DriverSaldo])],
+  imports: [TypeOrmModule.forFeature([Driver, DriverKoin])],
   exports: [DriverService],
 })
 export class DriverModule {}

@@ -46,6 +46,6 @@ export class FinanceQueryDto {
   rental_id?: string;
 
   @IsOptional()
-  @IsEnum(['unpaid', 'pending', 'partially_paid', 'paid', 'cancelled'])
+  @IsEnum(['unpaid', 'pending', 'paid', 'cancelled'])
   status?: string;
 }

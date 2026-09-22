@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from 'fs';
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,12 +14,15 @@ import { VehicleQueryDto } from './dto/vehicle-query.dto';
 import { VehicleExportDto } from './dto/vehicle-export.dto';
 import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
+import { GpsidService } from '../gpsid/gpsid.service';
 
 @Injectable()
 export class VehiclesService {
+  private readonly logger = new Logger(VehiclesService.name);
   constructor(
     @InjectRepository(Vehicle)
     private readonly vehiclesRepository: Repository<Vehicle>,
+    private readonly gpsidService: GpsidService,
   ) {}
 
   async findAll(query?: VehicleQueryDto) {
@@ -153,6 +157,11 @@ export class VehiclesService {
       });
     }
     return vehicle;
+  }
+
+  async fetchVehiclesFromGpsid() {
+    const data = await this.gpsidService.fetchVehicles();
+    return data;
   }
 
   async create(data: AddVehicleDto, files?: Express.Multer.File[]) {

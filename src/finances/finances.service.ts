@@ -12,8 +12,8 @@ import { Rental } from '../rentals/entities/rental.entity';
 import { Driver } from '../drivers/entities/driver.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity';
-import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
-import { SaldoTransaction } from '../saldo/entities/saldo-transaction.entity';
+import { DriverKoin } from '../koin/entities/driver-koin.entity';
+import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { AddFinanceDto } from './dto/add-finance.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceExportDto } from './dto/finance-export.dto';
@@ -26,7 +26,6 @@ import { createObjectCsvStringifier } from 'csv-writer';
 const FINANCE_STATUS = [
   'unpaid',
   'pending',
-  'partially_paid',
   'paid',
   'cancelled',
 ];
@@ -48,24 +47,24 @@ export class FinancesService {
     private readonly rentalsRepository: Repository<Rental>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
-    @InjectRepository(DriverSaldo)
-    private readonly driverSaldoRepository: Repository<DriverSaldo>,
-    @InjectRepository(SaldoTransaction)
-    private readonly saldoTransactionRepository: Repository<SaldoTransaction>,
+    @InjectRepository(DriverKoin)
+    private readonly driverSaldoRepository: Repository<DriverKoin>,
+    @InjectRepository(KoinTransaction)
+    private readonly saldoTransactionRepository: Repository<KoinTransaction>,
     private readonly rentalsService: RentalsService,
     private readonly dataSource: DataSource,
   ) {}
 
-  private async findSaldoForUpdate(
+  private async findKoinForUpdate(
     queryRunner: QueryRunner,
     driverId: string,
-  ): Promise<DriverSaldo | null> {
+  ): Promise<DriverKoin | null> {
     const rows = await queryRunner.query(
       'SELECT id, driver_id, balance, created_at, updated_at FROM driver_saldo WHERE driver_id = $1 FOR UPDATE',
       [driverId],
     );
     if (!rows || rows.length === 0) return null;
-    return this.driverSaldoRepository.create(rows[0] as Partial<DriverSaldo>);
+    return this.driverSaldoRepository.create(rows[0] as Partial<DriverKoin>);
   }
 
   private async lockFinance(
@@ -146,11 +145,7 @@ export class FinancesService {
   }
 
   private resolveTotalAmount(finance: Finance): number {
-    const total = Number(finance.total_amount) || 0;
-    if (total > 0) return total;
-    return (
-      Number(finance.amount_received) || Number(finance.deposit_amount) || 0
-    );
+    return Number(finance.fee_admin_join) || 0;
   }
 
   private deriveStatus(
@@ -162,7 +157,6 @@ export class FinancesService {
     if (currentStatus === 'cancelled') return 'cancelled';
     if (total > 0 && paid >= total) return 'paid';
     if (pending > 0 && paid === 0) return 'pending';
-    if (paid > 0) return 'partially_paid';
     return 'unpaid';
   }
 
@@ -204,15 +198,12 @@ export class FinancesService {
       reference_number: finance.reference_number,
       payment_method: finance.payment_method,
       amount_received: paidAmount,
-      deposit_amount: Number(finance.deposit_amount) || 0,
-      total_amount: total,
+      fee_admin_join: Number(finance.fee_admin_join) || 0,
       paid_amount: paidAmount,
       remaining_amount: remainingAmount,
       payments_count:
         finance.payments?.length ??
         (typeof t.count === 'number' ? t.count : 0),
-      payment_terms: finance.payment_terms ?? 1,
-      fee_admin_join: Number(finance.fee_admin_join) || 0,
       notes: finance.notes,
       payer: finance.payer,
       driver_id: finance.driver_id,
@@ -553,6 +544,51 @@ export class FinancesService {
     };
   }
 
+  async getAdminFees(query?: FinanceQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.financesRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.driver', 'driver')
+      .leftJoinAndSelect('f.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+      .where('f.fee_admin_join > 0')
+      .orderBy('f.created_at', 'DESC');
+
+    if (query?.search) {
+      qb.andWhere(
+        '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    const totals = await this.attachTotals(data);
+
+    const items = data.map((f) =>
+      this.buildFinanceView(
+        f,
+        totals[f.id] || { paid: 0, pending: 0, count: 0 },
+      ),
+    );
+
+    return {
+      success: true,
+      message: 'Admin fees retrieved successfully',
+      data: items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async getMonthlySummary(year?: number) {
     const currentYear = year || new Date().getFullYear();
 
@@ -588,9 +624,9 @@ export class FinancesService {
   }
 
   /**
-   * Menerapkan pengaruh saldo untuk pembayaran yang valid/paid.
-   * - payment_method 'saldo'  -> saldo driver berkurang (dibayar dari saldo)
-   * - metode lain             -> tanpa efek saldo; hanya mengurangi tagihan
+   * Menerapkan pengaruh koin untuk pembayaran yang valid/paid.
+   * - payment_method 'saldo'  -> koin driver berkurang (dibayar dari koin)
+   * - metode lain             -> tanpa efek koin; hanya mengurangi tagihan
    */
   private async applyPaidPayment(
     queryRunner: QueryRunner,
@@ -602,22 +638,22 @@ export class FinancesService {
     if (payment.payment_method !== 'saldo') return;
     const driverId = finance.driver_id;
 
-    const saldo = await this.findSaldoForUpdate(queryRunner, driverId);
-    const balanceBefore = saldo ? Number(saldo.balance) : 0;
+    const koin = await this.findKoinForUpdate(queryRunner, driverId);
+    const balanceBefore = koin ? Number(koin.balance) : 0;
     const balanceAfter = balanceBefore - amount;
 
     if (balanceAfter < 0) {
       throw new BadRequestException(
-        `Saldo driver tidak mencukupi. Saldo saat ini: Rp ${balanceBefore.toLocaleString('id-ID')}, diperlukan: Rp ${amount.toLocaleString('id-ID')}`,
+        `Koin driver tidak mencukupi. Koin saat ini: Rp ${balanceBefore.toLocaleString('id-ID')}, diperlukan: Rp ${amount.toLocaleString('id-ID')}`,
       );
     }
 
-    if (saldo) {
-      saldo.balance = balanceAfter;
-      await queryRunner.manager.save(saldo);
+    if (koin) {
+      koin.balance = balanceAfter;
+      await queryRunner.manager.save(koin);
     }
 
-    const tx = queryRunner.manager.create(SaldoTransaction, {
+    const tx = queryRunner.manager.create(KoinTransaction, {
       driver_id: driverId,
       type: 'rental_payment',
       amount,
@@ -625,15 +661,15 @@ export class FinancesService {
       balance_after: balanceAfter,
       reference_id: finance.id,
       reference_number: payment.reference_number || finance.reference_number,
-      notes: `Saldo berkurang dari finance ${finance.reference_number}`,
+      notes: `Koin berkurang dari finance ${finance.reference_number}`,
     });
     await queryRunner.manager.save(tx);
   }
 
   /**
    * Membalik pengaruh uang masuk saat finance dihapus:
-   * - payment_method 'saldo'  -> refund (kembalikan saldo ke driver)
-   * - metode lain             -> tanpa efek saldo; pembayaran hanya mengurangi tagihan
+   * - payment_method 'saldo'  -> refund (kembalikan koin ke driver)
+   * - metode lain             -> tanpa efek koin; pembayaran hanya mengurangi tagihan
    */
   private async reversePaidPayment(
     queryRunner: QueryRunner,
@@ -645,24 +681,24 @@ export class FinancesService {
     if (payment.payment_method !== 'saldo') return;
     const driverId = finance.driver_id;
 
-    const saldo = await this.findSaldoForUpdate(queryRunner, driverId);
-    const balanceBefore = saldo ? Number(saldo.balance) : 0;
+    const koin = await this.findKoinForUpdate(queryRunner, driverId);
+    const balanceBefore = koin ? Number(koin.balance) : 0;
     const balanceAfter = balanceBefore + amount;
 
-    if (saldo) {
-      saldo.balance = balanceAfter;
-      await queryRunner.manager.save(saldo);
+    if (koin) {
+      koin.balance = balanceAfter;
+      await queryRunner.manager.save(koin);
     } else {
-      const newSaldo = queryRunner.manager.create(DriverSaldo, {
+      const newKoin = queryRunner.manager.create(DriverKoin, {
         driver_id: driverId,
         balance: balanceAfter,
       });
-      await queryRunner.manager.save(newSaldo);
+      await queryRunner.manager.save(newKoin);
     }
 
-    const tx = queryRunner.manager.create(SaldoTransaction, {
+    const tx = queryRunner.manager.create(KoinTransaction, {
       driver_id: driverId,
-      driver_saldo_id: saldo?.id,
+      driver_saldo_id: koin?.id,
       type: 'refund',
       amount,
       balance_before: balanceBefore,
@@ -704,8 +740,7 @@ export class FinancesService {
       }
 
       // Admin fee join otomatis per mobil/rental yang baru pertama kali dibiayai
-      // (Reguler Rp 500.000, Premium Rp 700.000). Ditambahkan ke total tagihan.
-      // Rental yang sudah pernah terhubung finance tidak dikenakan biaya lagi.
+      // (Reguler Rp 500.000, Premium Rp 700.000).
       const autoJoinFee = await this.computeAdminJoinFee(
         data.driver_id,
         rental_ids,
@@ -713,28 +748,20 @@ export class FinancesService {
       );
       const joinFee = autoJoinFee;
 
-      const baseAmount =
-        data.total_amount !== undefined && Number(data.total_amount) > 0
-          ? Number(data.total_amount)
-          : Number(data.amount_received) || 0;
-
-      const totalAmount = baseAmount + autoJoinFee;
-
-      if (!(totalAmount > 0)) {
+      if (!(joinFee > 0)) {
         throw new BadRequestException(
-          'Total nominal finance (tagihan) harus lebih dari 0',
+          'Admin fee harus lebih dari 0',
         );
       }
 
       const initialAmount = Number(data.amount_received) || 0;
 
-      // Tentukan status pembayaran awal. Backend tidak mempercayai status
-      // yang dikirim frontend: status final selalu dihitung dari nominal.
+      // Tentukan status pembayaran awal.
       let initialPaymentStatus: 'paid' | 'pending' | null = null;
       if (initialAmount > 0) {
-        if (initialAmount > totalAmount) {
+        if (initialAmount > joinFee) {
           throw new BadRequestException(
-            'Nominal pembayaran awal tidak boleh melebihi total tagihan',
+            'Nominal pembayaran awal tidak boleh melebihi admin fee',
           );
         }
         if (finance_type === 'pending') {
@@ -758,10 +785,8 @@ export class FinancesService {
 
       const finance = queryRunner.manager.create(Finance, {
         ...financeData,
-        total_amount: totalAmount,
         amount_received: 0,
         payment_date: new Date(data.payment_date),
-        payment_terms: data.payment_terms ?? 1,
         fee_admin_join: joinFee,
         payments: [],
       });
@@ -800,7 +825,7 @@ export class FinancesService {
       const totals = this.getPaymentTotals(saved.payments);
       saved.amount_received = totals.paid;
       saved.status = this.deriveStatus(
-        totalAmount,
+        joinFee,
         totals.paid,
         totals.pending,
       );
@@ -851,26 +876,9 @@ export class FinancesService {
     const oldRentalIds = existingFinance.rentals?.map((r) => r.id) || [];
     const { rental_ids, amount_received, finance_type, ...updateData } = data;
 
-    const totals = this.getPaymentTotals(existingFinance.payments);
-    const currentTotal = this.resolveTotalAmount(existingFinance);
-    // Admin fee join sudah ditetapkan sekali saat create. Nilai total_amount
-    // dari frontend adalah nilai dasar (belum termasuk admin fee).
-    const storedFee = Number(existingFinance.fee_admin_join) || 0;
-
-    let newTotal = currentTotal;
-    if (data.total_amount !== undefined && Number(data.total_amount) > 0) {
-      newTotal = Number(data.total_amount) + storedFee;
-      if (newTotal < totals.paid) {
-        throw new BadRequestException(
-          `Total tagihan tidak boleh lebih kecil dari total yang sudah dibayar (Rp ${totals.paid.toLocaleString('id-ID')}).`,
-        );
-      }
-    }
-
     const updatePayload: any = {
       ...updateData,
       payment_date: data.payment_date ? new Date(data.payment_date) : undefined,
-      total_amount: newTotal,
     };
 
     // Cek duplikasi No. Referensi (abaikan jika tidak berubah dari yang lama).
@@ -940,7 +948,7 @@ export class FinancesService {
     const paymentTotals = this.getPaymentTotals(finance.payments);
     finance.amount_received = paymentTotals.paid;
     finance.status = this.deriveStatus(
-      newTotal,
+      this.resolveTotalAmount(finance),
       paymentTotals.paid,
       paymentTotals.pending,
     );
@@ -1390,6 +1398,40 @@ export class FinancesService {
     };
   }
 
+  async getMyAdminFee(driverId: string) {
+    const finance = await this.financesRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.driver', 'driver')
+      .leftJoinAndSelect('f.rentals', 'rentals')
+      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+      .where('f.driver_id = :driverId', { driverId })
+      .andWhere('f.fee_admin_join > 0')
+      .andWhere('f.is_active = :isActive', { isActive: true })
+      .orderBy('f.created_at', 'DESC')
+      .getOne();
+
+    if (!finance) {
+      return {
+        success: true,
+        message: 'No admin fee found',
+        data: null,
+      };
+    }
+
+    const totals = await this.attachTotals([finance]);
+    const view = this.buildFinanceView(
+      finance,
+      totals[finance.id] || { paid: 0, pending: 0, count: 0 },
+    );
+
+    return {
+      success: true,
+      message: 'Admin fee retrieved successfully',
+      data: view,
+    };
+  }
+
   async getDriverSummary(driverId: string) {
     const driver = await this.driversRepository.findOne({
       where: { id: driverId },
@@ -1411,7 +1453,6 @@ export class FinancesService {
     const countByStatus: Record<string, number> = {
       unpaid: 0,
       pending: 0,
-      partially_paid: 0,
       paid: 0,
       cancelled: 0,
     };
@@ -1438,7 +1479,7 @@ export class FinancesService {
         id: finance.id,
         reference_number: finance.reference_number,
         payment_date: finance.payment_date,
-        total_amount: total,
+        fee_admin_join: Number(finance.fee_admin_join) || 0,
         paid_amount: totals.paid,
         pending_amount: totals.pending,
         remaining_amount: remaining,
@@ -1467,17 +1508,15 @@ export class FinancesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : [
+        : [
           'reference_number',
           'payer',
-          'total_amount',
           'paid_amount',
           'remaining_amount',
           'status',
           'payment_date',
           'payment_method',
           'fee_admin_join',
-          'deposit_amount',
           'created_at',
           'vehicle',
           'vendor',
@@ -1524,15 +1563,11 @@ export class FinancesService {
     const columnMap: Record<string, (v: any) => string> = {
       reference_number: (v) => v.reference_number || '-',
       payer: (v) => v.payer || '-',
-      total_amount: (v) =>
-        `Rp ${Number(v.total_amount).toLocaleString('id-ID')}`,
       paid_amount: (v) => `Rp ${Number(v.paid_amount).toLocaleString('id-ID')}`,
       remaining_amount: (v) =>
         `Rp ${Number(v.remaining_amount).toLocaleString('id-ID')}`,
       amount_received: (v) =>
         `Rp ${Number(v.amount_received).toLocaleString('id-ID')}`,
-      deposit_amount: (v) =>
-        `Rp ${Number(v.deposit_amount).toLocaleString('id-ID')}`,
       payment_date: (v) =>
         v.payment_date
           ? new Date(v.payment_date).toLocaleDateString('id-ID')
@@ -1545,7 +1580,6 @@ export class FinancesService {
         Number(v.fee_admin_join) > 0
           ? `Rp ${Number(v.fee_admin_join).toLocaleString('id-ID')}`
           : '0',
-      payment_terms: (v) => `${Number(v.payment_terms) || 1} Kali`,
       status: (v) => v.status || '-',
       payment_method: (v) => v.payment_method || '-',
       driverName: (v) =>
@@ -1566,15 +1600,12 @@ export class FinancesService {
     const headerLabels: Record<string, string> = {
       reference_number: 'Reference Number',
       payer: 'Payer',
-      total_amount: 'Total Amount',
       paid_amount: 'Paid Amount',
       remaining_amount: 'Remaining Amount',
       amount_received: 'Amount Received',
-      deposit_amount: 'Deposit Amount',
       payment_date: 'Payment Date',
       created_at: 'Tanggal Dibuat',
       fee_admin_join: 'Admin Fee Join',
-      payment_terms: 'Cicilan (Kali)',
       status: 'Status',
       payment_method: 'Payment Method',
       driverName: 'Driver Name',

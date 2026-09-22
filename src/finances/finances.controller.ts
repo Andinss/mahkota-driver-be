@@ -55,6 +55,16 @@ export class FinancesController {
     return this.financesService.findMyFinances(driverId, query);
   }
 
+  @Get('my-admin-fee')
+  @Permissions('finance.read')
+  findMyAdminFee(@Req() req: any) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return { success: true, data: null };
+    }
+    return this.financesService.getMyAdminFee(driverId);
+  }
+
   @Get('monthly-summary')
   @Permissions('finance.read')
   getMonthlySummary(@Query('year') year?: string) {
@@ -80,6 +90,12 @@ export class FinancesController {
   @Permissions('finance.read')
   getSummary() {
     return this.financesService.getSummary();
+  }
+
+  @Get('admin-fees')
+  @Permissions('finance.read')
+  getAdminFees(@Query() query: FinanceQueryDto) {
+    return this.financesService.getAdminFees(query);
   }
 
   @Get('driver/:driverId/summary')

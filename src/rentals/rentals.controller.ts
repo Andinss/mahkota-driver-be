@@ -59,6 +59,12 @@ export class RentalsController {
     return this.rentalService.getSummary();
   }
 
+  @Get('driver/:driverId/rental-count')
+  @Permissions('rental.read')
+  getDriverRentalCount(@Param('driverId') driverId: string) {
+    return this.rentalService.getDriverRentalCount(driverId);
+  }
+
   @Get('detail/:id')
   @Permissions('rental.read')
   findDetail(@Param('id') id: string) {

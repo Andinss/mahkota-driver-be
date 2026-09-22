@@ -7,10 +7,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Driver } from '../../drivers/entities/driver.entity';
-import { DriverSaldo } from './driver-saldo.entity';
+import { DriverKoin } from './driver-koin.entity';
 
 @Entity('saldo_transactions')
-export class SaldoTransaction {
+export class KoinTransaction {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -24,9 +24,9 @@ export class SaldoTransaction {
   @Column({ type: 'uuid', nullable: true })
   driver_saldo_id!: string;
 
-  @ManyToOne(() => DriverSaldo, (saldo) => saldo.transactions)
+  @ManyToOne(() => DriverKoin, (koin) => koin.transactions)
   @JoinColumn({ name: 'driver_saldo_id' })
-  driver_saldo!: DriverSaldo;
+  driver_saldo!: DriverKoin;
 
   @Column({
     type: 'enum',

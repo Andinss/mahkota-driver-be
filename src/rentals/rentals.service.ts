@@ -6,12 +6,22 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, QueryRunner } from 'typeorm';
+import { Repository, DataSource, QueryRunner, MoreThan } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
+import { Finance } from '../finances/entities/finance.entity';
+import { FinancePayment } from '../finances/entities/finance-payment.entity';
+import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
+
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 import { RentalQueryDto } from './dto/rental-query.dto';
 import { RentalExportDto } from './dto/rental-export.dto';
 import * as ExcelJS from 'exceljs';
@@ -26,6 +36,10 @@ export class RentalsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
+    @InjectRepository(Finance)
+    private readonly financesRepository: Repository<Finance>,
+    @InjectRepository(FinancePayment)
+    private readonly financePaymentRepository: Repository<FinancePayment>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -121,6 +135,25 @@ export class RentalsService {
     };
   }
 
+  async getDriverRentalCount(driverId: string) {
+    const count = await this.rentalsRepository.count({
+      where: { driver_id: driverId },
+    });
+    const hasAdminFee = !!(await this.financesRepository.findOne({
+      where: { driver_id: driverId, fee_admin_join: MoreThan(0) },
+    }));
+    return {
+      success: true,
+      message: 'Driver rental count retrieved successfully',
+      data: {
+        driver_id: driverId,
+        rental_count: count,
+        is_first_rental: count <= 1,
+        has_admin_fee: hasAdminFee,
+      },
+    };
+  }
+
   async getSummary() {
     const totalResult = await this.rentalsRepository
       .createQueryBuilder('r')
@@ -193,12 +226,105 @@ export class RentalsService {
 
       await queryRunner.manager.update(Vehicle, data.vehicle_id, { status: 'rented' });
 
+      // Auto-create Finance linked to this Rental
+      const totalAmount = Number(data.daily_rate) * Number(data.total_duration);
+      const dailyRate = Number(data.daily_rate) || 0;
+      const totalDuration = Number(data.total_duration) || 0;
+
+      // Compute admin fee: only charge if this driver has never had an admin fee before
+      let adminFee = 0;
+      const existingAdminFee = await queryRunner.manager.findOne(Finance, {
+        where: { driver_id: data.driver_id, fee_admin_join: MoreThan(0) },
+      });
+      if (!existingAdminFee) {
+        const pricingCategory = vehicle.pricing_category;
+        if (pricingCategory === 'Premium') {
+          adminFee = 700000;
+        } else if (pricingCategory === 'Reguler') {
+          adminFee = 500000;
+        }
+      }
+
+      const rentalNumber = result.rental_number || `RENT-${Date.now()}`;
+
+      let savedFinance: Finance | null = null;
+      if (adminFee > 0) {
+        const now = new Date();
+        const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const lastFinance = await queryRunner.manager
+          .createQueryBuilder(Finance, 'f')
+          .where("f.reference_number LIKE :prefix", { prefix: `ADF-${ym}/%` })
+          .orderBy("f.reference_number", "DESC")
+          .getOne();
+        let seq = 1;
+        if (lastFinance) {
+          const parts = lastFinance.reference_number.split('/');
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum)) seq = lastNum + 1;
+        }
+        const refNumber = `ADF-${ym}/${String(seq).padStart(4, '0')}`;
+
+        const finance = queryRunner.manager.create(Finance, {
+          payment_date: new Date(),
+          reference_number: refNumber,
+          payment_method: 'transfer',
+          amount_received: 0,
+          fee_admin_join: adminFee,
+          notes: `Admin Fee: ${vehicle.pricing_category} Rp ${adminFee.toLocaleString('id-ID')}`,
+          payer: `${driver.first_name} ${driver.last_name}`,
+          driver_id: data.driver_id,
+          finance_type: 'unpaid',
+          status: 'unpaid',
+          rentals: [{ id: result.id } as any],
+        });
+        savedFinance = await queryRunner.manager.save(finance);
+      }
+
+      // Auto-create today's daily payment so it shows immediately in admin dashboard
+      const today = new Date();
+      const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayStr = toLocalDateString(todayLocal);
+
+      const ymPay = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
+      const lastDailyPayment = await queryRunner.manager
+        .createQueryBuilder(DailyPayment, 'dp')
+        .where("dp.reference_number LIKE :prefix", { prefix: `PAY-${ymPay}/%` })
+        .orderBy("dp.reference_number", "DESC")
+        .getOne();
+      let seqPay = 1;
+      if (lastDailyPayment) {
+        const parts = lastDailyPayment.reference_number.split('/');
+        const lastNum = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastNum)) seqPay = lastNum + 1;
+      }
+      const payRefNumber = `PAY-${ymPay}/${String(seqPay).padStart(4, '0')}`;
+
+      const dailyPayment = queryRunner.manager.create(DailyPayment, {
+        rental_id: result.id,
+        driver_id: data.driver_id,
+        vehicle_id: data.vehicle_id,
+        payment_date: todayLocal,
+        amount: dailyRate,
+        status: 'unpaid',
+        reference_number: payRefNumber,
+        notes: `Daily payment for rental ${rentalNumber}`,
+      });
+      const savedDailyPayment = await queryRunner.manager.save(dailyPayment);
+      if (!savedDailyPayment?.id) {
+        throw new Error('Failed to save daily payment: no ID returned');
+      }
+
       await queryRunner.commitTransaction();
 
       return {
         success: true,
         message: 'Rental created successfully',
         data: result,
+        finance: savedFinance ? {
+          id: savedFinance.id,
+          reference_number: savedFinance.reference_number,
+          admin_fee: adminFee,
+        } : null,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();

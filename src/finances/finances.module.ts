@@ -6,8 +6,8 @@ import { Finance } from './entities/finance.entity';
 import { FinancePayment } from './entities/finance-payment.entity';
 import { Rental } from '../rentals/entities/rental.entity';
 import { Driver } from '../drivers/entities/driver.entity';
-import { DriverSaldo } from '../saldo/entities/driver-saldo.entity';
-import { SaldoTransaction } from '../saldo/entities/saldo-transaction.entity';
+import { DriverKoin } from '../koin/entities/driver-koin.entity';
+import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { DriverModule } from '../drivers/driver.module';
 import { RentalsModule } from '../rentals/rentals.module';
 
@@ -18,8 +18,8 @@ import { RentalsModule } from '../rentals/rentals.module';
       FinancePayment,
       Rental,
       Driver,
-      DriverSaldo,
-      SaldoTransaction,
+      DriverKoin,
+      KoinTransaction,
     ]),
     DriverModule,
     RentalsModule,
