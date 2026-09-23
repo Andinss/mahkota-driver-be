@@ -32,7 +32,7 @@ export class Rental {
   @Column({ type: 'uuid' })
   vehicle_id!: string;
 
-  @ManyToOne(() => Vehicle)
+  @ManyToOne(() => Vehicle, (vehicle) => vehicle.rentals)
   @JoinColumn({ name: 'vehicle_id' })
   vehicle!: Vehicle;
 

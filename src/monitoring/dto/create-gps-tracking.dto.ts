@@ -2,9 +2,6 @@ import { IsOptional } from 'class-validator';
 
 export class CreateGpsTrackingDto {
   @IsOptional()
-  id_imei?: string;
-
-  @IsOptional()
   VehicleId?: string;
 
   @IsOptional()
@@ -55,5 +52,5 @@ export class GpsTrackingQueryDto {
   search?: string;
 
   @IsOptional()
-  id_imei?: string;
+  VehicleId?: string;
 }

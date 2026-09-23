@@ -3,19 +3,25 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Vehicle } from '../../vehicles/entities/vehicle.entity';
 
 @Entity('gps_tracking')
 export class GpsTracking {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', default: '' })
-  id_imei!: string;
+  @Column({ type: 'varchar', nullable: true, default: null })
+  VehicleId!: string | null;
 
-  @Column({ type: 'varchar', default: '' })
-  VehicleId!: string;
+  @ManyToOne(() => Vehicle, (vehicle) => vehicle.trackings, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'VehicleId', referencedColumnName: 'imei' })
+  vehicle?: Vehicle | null;
 
   @Column({ type: 'varchar', default: '' })
   VehicleNumber!: string;
@@ -55,7 +61,4 @@ export class GpsTracking {
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp' })
-  updated_at!: Date;
 }

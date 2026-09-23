@@ -6,8 +6,11 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { VendorVehicle } from '../../vendor-vehicle/entities/vendor-vehicle.entity';
+import { GpsTracking } from '../../monitoring/entities/gps-tracking.entity';
+import { Rental } from '../../rentals/entities/rental.entity';
 
 @Entity('vehicles')
 export class Vehicle {
@@ -75,8 +78,8 @@ export class Vehicle {
   @Column({ type: 'uuid', nullable: true })
   vendor_id!: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  imei!: string;
+  @Column({ type: 'varchar', length: 100, nullable: true, unique: true })
+  imei!: string | null;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   device_name!: string;
@@ -87,6 +90,12 @@ export class Vehicle {
   })
   @JoinColumn({ name: 'vendor_id' })
   vendor!: VendorVehicle;
+
+  @OneToMany(() => GpsTracking, (tracking) => tracking.vehicle)
+  trackings!: GpsTracking[];
+
+  @OneToMany(() => Rental, (rental) => rental.vehicle)
+  rentals!: Rental[];
 
   //default
   @CreateDateColumn({ type: 'timestamp' })

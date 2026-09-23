@@ -28,16 +28,26 @@ export class MonitoringService {
 
     const qb = this.trackingRepository
       .createQueryBuilder('t')
+      .leftJoinAndSelect('t.vehicle', 'v')
+      .leftJoinAndSelect('v.vendor', 'vendor')
+      .leftJoinAndSelect(
+        'v.rentals',
+        'r',
+        'CURRENT_DATE BETWEEN r.start_date AND r.end_date',
+      )
+      .leftJoinAndSelect('r.driver', 'driver')
       .orderBy('t.DatetimeUTC', 'DESC')
       .addOrderBy('t.created_at', 'DESC');
 
-    if (query?.id_imei) {
-      qb.andWhere('t.id_imei = :idImei', { idImei: query.id_imei });
+    if (query?.VehicleId) {
+      qb.andWhere('t.VehicleId = :vehicleId', {
+        vehicleId: query.VehicleId,
+      });
     }
 
     if (query?.search) {
       qb.andWhere(
-        '(t.VehicleNumber ILIKE :search OR t.VehicleId ILIKE :search OR t.id_imei ILIKE :search OR t.GpsLocation ILIKE :search)',
+        '(t.VehicleNumber ILIKE :search OR t.VehicleId ILIKE :search OR t.GpsLocation ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
@@ -58,7 +68,18 @@ export class MonitoringService {
   }
 
   async findById(id: string) {
-    const record = await this.trackingRepository.findOne({ where: { id } });
+    const record = await this.trackingRepository
+      .createQueryBuilder('t')
+      .leftJoinAndSelect('t.vehicle', 'v')
+      .leftJoinAndSelect('v.vendor', 'vendor')
+      .leftJoinAndSelect(
+        'v.rentals',
+        'r',
+        'CURRENT_DATE BETWEEN r.start_date AND r.end_date',
+      )
+      .leftJoinAndSelect('r.driver', 'driver')
+      .where('t.id = :id', { id })
+      .getOne();
     if (!record) {
       throw new NotFoundException('GPS tracking record not found');
     }
@@ -71,9 +92,26 @@ export class MonitoringService {
   }
 
   async create(dto: CreateGpsTrackingDto) {
+    const rawVehicleId =
+      dto.VehicleId != null ? String(dto.VehicleId).trim() : '';
+    let vehicleImei: string | null = null;
+
+    if (rawVehicleId) {
+      let vehicle = await this.vehicleRepository.findOne({
+        where: { imei: rawVehicleId },
+      });
+      if (!vehicle) {
+        vehicle = await this.vehicleRepository.findOne({
+          where: { id: rawVehicleId },
+        });
+      }
+      if (vehicle?.imei) {
+        vehicleImei = vehicle.imei;
+      }
+    }
+
     const record = this.trackingRepository.create({
-      id_imei: dto.id_imei != null ? String(dto.id_imei) : '',
-      VehicleId: dto.VehicleId != null ? String(dto.VehicleId) : '',
+      VehicleId: vehicleImei,
       VehicleNumber: dto.VehicleNumber != null ? String(dto.VehicleNumber) : '',
       DatetimeUTC: dto.DatetimeUTC != null ? String(dto.DatetimeUTC) : '',
       GpsLocation: dto.GpsLocation != null ? String(dto.GpsLocation) : '',
@@ -110,13 +148,15 @@ export class MonitoringService {
     }
 
     await this.vehicleRepository.update(vehicleId, {
-      engine_status: engine_status as 'on' | 'off',
+      engine_status: engine_status,
     });
 
-    await this.trackingRepository.update(
-      { VehicleId: vehicleId },
-      { Engine: engine_status },
-    );
+    if (vehicle.imei) {
+      await this.trackingRepository.update(
+        { VehicleId: vehicle.imei },
+        { Engine: engine_status },
+      );
+    }
 
     return {
       success: true,
