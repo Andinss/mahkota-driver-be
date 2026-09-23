@@ -3,10 +3,8 @@ import { AppModule } from './app.module';
 import { User } from './users/entities/user.entity';
 import { Role } from './roles/entities/role.entity';
 import { Permission } from './permissions/entities/permission.entity';
-import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { Driver } from './drivers/entities/driver.entity';
 import { LatePayment } from './late-payments/entities/late-payment.entity';
-import { GpsTracking } from './monitoring/entities/gps-tracking.entity';
 import { Setting } from './settings/entities/setting.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
 import { DriverKoin } from './koin/entities/driver-koin.entity';
@@ -157,82 +155,6 @@ const rolesData: RoleSeed[] = [
       const perms = ['driver.read.all', 'vehicle.read', 'rental.read'];
       return perms.includes(name);
     },
-  },
-];
-
-// ─── Vehicles ─────────────────────────────────────────────────
-const vehiclesData = [
-  {
-    merk: 'Toyota',
-    model: 'Avanza',
-    launching_year: new Date('2022-01-15'),
-    license_plate: 'B 1234 ABC',
-    vin_number: 'MHFX1234567890123',
-    color: 'Silver',
-    status: 'rented',
-    engine_number: 'EN-TOYOTA-001',
-    engine_status: 'on',
-    daily_rate: 350000,
-    pricing_category: 'Reguler',
-    vendor_name: 'CV Armada Jaya',
-    imei: '123456789012345',
-    device_name: 'GPS Tracker 001',
-  },
-  {
-    merk: 'Honda',
-    model: 'Brio',
-    launching_year: new Date('2023-03-20'),
-    license_plate: 'B 5678 DEF',
-    vin_number: 'MHFX9876543210987',
-    color: 'Red',
-    status: 'rented',
-    engine_number: 'EN-HONDA-001',
-    engine_status: 'off',
-    daily_rate: 300000,
-    pricing_category: 'Reguler',
-    vendor_name: 'CV Armada Jaya',
-  },
-  {
-    merk: 'Toyota',
-    model: 'Innova',
-    launching_year: new Date('2021-06-10'),
-    license_plate: 'B 9012 GHI',
-    vin_number: 'MHFX4567890123456',
-    color: 'Black',
-    status: 'Available',
-    engine_number: 'EN-TOYOTA-002',
-    engine_status: 'off',
-    daily_rate: 500000,
-    pricing_category: 'Premium',
-    vendor_name: 'CV Armada Jaya',
-  },
-  {
-    merk: 'Daihatsu',
-    model: 'Xenia',
-    launching_year: new Date('2023-08-05'),
-    license_plate: 'B 3456 JKL',
-    vin_number: 'MHFX1122334455667',
-    color: 'White',
-    status: 'rented',
-    engine_number: 'EN-DAIHATSU-001',
-    engine_status: 'on',
-    daily_rate: 280000,
-    pricing_category: 'Reguler',
-    vendor_name: 'PT Sejahtera Rent',
-  },
-  {
-    merk: 'Mitsubishi',
-    model: 'Xpander',
-    launching_year: new Date('2023-05-15'),
-    license_plate: 'B 2345 PQR',
-    vin_number: 'MHFX3344556677889',
-    color: 'Grey',
-    status: 'Available',
-    engine_number: 'EN-MITSUBISHI-001',
-    engine_status: 'off',
-    daily_rate: 400000,
-    pricing_category: 'Premium',
-    vendor_name: 'PT Sejahtera Rent',
   },
 ];
 
@@ -402,17 +324,11 @@ async function seed() {
     getRepositoryToken(Permission),
   );
   const userRepository = app.get<Repository<User>>(getRepositoryToken(User));
-  const vehicleRepository = app.get<Repository<Vehicle>>(
-    getRepositoryToken(Vehicle),
-  );
   const driverRepository = app.get<Repository<Driver>>(
     getRepositoryToken(Driver),
   );
   const latePaymentRepository = app.get<Repository<LatePayment>>(
     getRepositoryToken(LatePayment),
-  );
-  const trackingRepository = app.get<Repository<GpsTracking>>(
-    getRepositoryToken(GpsTracking),
   );
   const settingRepository = app.get<Repository<Setting>>(
     getRepositoryToken(Setting),
@@ -485,8 +401,12 @@ async function seed() {
       });
       role = await roleRepository.save(role);
       console.log(`  Created role: ${roleData.code}`);
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        (err as { code?: unknown }).code === '23505'
+      ) {
         console.log(`  Role already exists: ${roleData.code} (skipped)`);
         continue;
       }
@@ -504,7 +424,13 @@ async function seed() {
   // 3. SEED USERS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Users ──');
-  const usersData = [
+  const usersData: {
+    username: string;
+    email: string;
+    password: string;
+    roleCode: string;
+    driverIndex?: number;
+  }[] = [
     {
       username: 'admin',
       email: 'admin@example.com',
@@ -561,13 +487,10 @@ async function seed() {
     if (existing) {
       console.log(`  User already exists: ${userData.username}`);
       createdUsers.push(existing);
-      if (
-        'driverIndex' in userData &&
-        typeof (userData as any).driverIndex === 'number'
-      ) {
+      if (userData.driverIndex !== undefined) {
         driverUserMap.push({
           userIndex: i,
-          driverIndex: (userData as any).driverIndex,
+          driverIndex: userData.driverIndex,
         });
       }
       continue;
@@ -586,13 +509,10 @@ async function seed() {
     });
     const saved = await userRepository.save(user);
     createdUsers.push(saved);
-    if (
-      'driverIndex' in userData &&
-      typeof (userData as any).driverIndex === 'number'
-    ) {
+    if (userData.driverIndex !== undefined) {
       driverUserMap.push({
         userIndex: i,
-        driverIndex: (userData as any).driverIndex,
+        driverIndex: userData.driverIndex,
       });
     }
     console.log(`  Created user: ${userData.username} (${userData.roleCode})`);
@@ -641,38 +561,6 @@ async function seed() {
     console.log(`  Created vendor: ${vData.name} (${vData.owner_name})`);
   }
 
-  console.log('\n── Seeding Vehicles ──');
-  const createdVehicles: Vehicle[] = [];
-  for (const vData of vehiclesData) {
-    const { vendor_name, ...vehicleFields } = vData;
-    const vendorId = vendor_name
-      ? createdVendors.find((v) => v.name === vendor_name)?.id
-      : undefined;
-
-    let vehicle = await vehicleRepository.findOne({
-      where: { license_plate: vData.license_plate },
-    });
-    if (vehicle) {
-      if (vehicle.vendor_id !== vendorId) {
-        await vehicleRepository.update(vehicle.id, { vendor_id: vendorId });
-        console.log(
-          `  Updated vehicle vendor_id: ${vData.license_plate} → ${vendor_name || '-'}`,
-        );
-      }
-      createdVehicles.push(vehicle);
-      continue;
-    }
-    vehicle = vehicleRepository.create({
-      ...vehicleFields,
-      vendor_id: vendorId,
-    });
-    vehicle = await vehicleRepository.save(vehicle);
-    createdVehicles.push(vehicle);
-    console.log(
-      `  Created vehicle: ${vData.license_plate} (${vData.merk} ${vData.model})`,
-    );
-  }
-
   // ═══════════════════════════════════════════════════════════
   // 5. SEED DRIVERS
   // ═══════════════════════════════════════════════════════════
@@ -717,7 +605,20 @@ async function seed() {
   // 6. SEED LATE PAYMENTS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Late Payments ──');
-  const latePaymentsData = [
+  const latePaymentsData: {
+    driver: Driver;
+    driver_name: string;
+    vehicle: string;
+    plate: string;
+    amount: number;
+    due_date: Date;
+    payment_date?: Date;
+    justification?: string;
+    justification_reason?: string;
+    message?: string;
+    status: string;
+    admin_note?: string;
+  }[] = [
     {
       driver: createdDrivers[3],
       driver_name: 'Dedi Kurniawan',
@@ -774,70 +675,11 @@ async function seed() {
       justification_reason: lpData.justification_reason,
       message: lpData.message,
       status: lpData.status,
-      admin_note: (lpData as any).admin_note || undefined,
+      admin_note: lpData.admin_note,
     });
     await latePaymentRepository.save(latePayment);
     console.log(
       `  Created late payment: ${lpData.driver_name} Rp ${lpData.amount.toLocaleString('id-ID')} [${lpData.status}]`,
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // 7. SEED GPS TRACKING (1 data saja)
-  // ═══════════════════════════════════════════════════════════
-  console.log('\n── Seeding GPS Tracking ──');
-  const vehicle = createdVehicles[0];
-  const gpsData = [
-    {
-      vehicle,
-      id_imei: vehicle.imei || `imei-${vehicle.id}`,
-      VehicleId: vehicle.id,
-      VehicleNumber: vehicle.license_plate,
-      DatetimeUTC: '2026-09-23 08:00:00',
-      GpsLocation: 'Jakarta Selatan',
-      Lon: '106.8456',
-      Lat: '-6.2088',
-      Speed: '45',
-      Direction: '90',
-      Engine: vehicle.engine_status || 'on',
-      Odometer: '12500',
-      Car_Status: 'moving',
-      VehicleType: 'rental',
-      Alarm: 'none',
-    },
-  ];
-
-  const gData = gpsData[0];
-  const existing = await trackingRepository.findOne({
-    where: { VehicleId: gData.VehicleId },
-  });
-  if (existing) {
-    console.log(`  GPS already exists: ${gData.VehicleNumber}`);
-  } else {
-    const gps = trackingRepository.create({
-      id_imei: gData.id_imei,
-      VehicleId: gData.VehicleId,
-      VehicleNumber: gData.VehicleNumber,
-      DatetimeUTC: gData.DatetimeUTC,
-      GpsLocation: gData.GpsLocation,
-      Lon: gData.Lon,
-      Lat: gData.Lat,
-      Speed: gData.Speed,
-      Direction: gData.Direction,
-      Engine: gData.Engine,
-      Odometer: gData.Odometer,
-      Car_Status: gData.Car_Status,
-      VehicleType: gData.VehicleType,
-      Alarm: gData.Alarm,
-    });
-    await trackingRepository.save(gps);
-
-    await vehicleRepository.update(gData.VehicleId, {
-      engine_status: gData.Engine,
-    });
-
-    console.log(
-      `  GPS: ${gData.VehicleNumber} @ ${gData.Lat}, ${gData.Lon} [${gData.Car_Status}] engine=${gData.Engine}`,
     );
   }
 
