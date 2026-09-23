@@ -176,11 +176,7 @@ export class VendorVehicleController {
     @Body() updateVendorVehicleDto: Partial<UpdateVendorVehicleDto>,
     @Param('id') id: string,
   ) {
-    return this.vendorVehicleService.update(
-      id,
-      updateVendorVehicleDto,
-      files,
-    );
+    return this.vendorVehicleService.update(id, updateVendorVehicleDto, files);
   }
 
   @Put('status/:id')

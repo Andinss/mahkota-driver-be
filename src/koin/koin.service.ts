@@ -81,7 +81,9 @@ export class KoinService {
         where: { id: dto.driver_id },
       });
       if (!driver) {
-        throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
+        throw new NotFoundException(
+          `Driver with id ${dto.driver_id} not found`,
+        );
       }
 
       let koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
@@ -100,7 +102,9 @@ export class KoinService {
         await queryRunner.manager.save(koin);
       }
 
-      const referenceNumber = dto.reference_number || `KN-${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+      const referenceNumber =
+        dto.reference_number ||
+        `KN-${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 
       const transaction = this.transactionRepository.create({
         driver_id: dto.driver_id,
@@ -110,7 +114,8 @@ export class KoinService {
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         reference_number: referenceNumber,
-        notes: dto.notes || `Top up koin Rp ${dto.amount.toLocaleString('id-ID')}`,
+        notes:
+          dto.notes || `Top up koin Rp ${dto.amount.toLocaleString('id-ID')}`,
       });
       await queryRunner.manager.save(transaction);
 
@@ -148,7 +153,9 @@ export class KoinService {
         where: { id: dto.driver_id },
       });
       if (!driver) {
-        throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
+        throw new NotFoundException(
+          `Driver with id ${dto.driver_id} not found`,
+        );
       }
 
       const koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
@@ -193,7 +200,11 @@ export class KoinService {
     } catch (error) {
       await queryRunner.rollbackTransaction();
       console.error('Failed to deduct koin:', error);
-      if (error instanceof NotFoundException || error instanceof BadRequestException) throw error;
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      )
+        throw error;
       throw new InternalServerErrorException('Failed to deduct koin');
     } finally {
       await queryRunner.release();
@@ -210,7 +221,9 @@ export class KoinService {
         where: { id: dto.driver_id },
       });
       if (!driver) {
-        throw new NotFoundException(`Driver with id ${dto.driver_id} not found`);
+        throw new NotFoundException(
+          `Driver with id ${dto.driver_id} not found`,
+        );
       }
 
       let koin = await this.findKoinForUpdate(queryRunner, dto.driver_id);
@@ -278,10 +291,7 @@ export class KoinService {
       qb.andWhere('t.type = :type', { type: query.type });
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -335,10 +345,7 @@ export class KoinService {
       qb.andWhere('t.type = :type', { type: query.type });
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 

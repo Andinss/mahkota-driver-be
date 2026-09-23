@@ -53,7 +53,10 @@ export class DailyPaymentsService {
       [driverId],
     );
     if (!rows || rows.length === 0) return null;
-    return queryRunner.manager.create(DriverKoin, rows[0] as Partial<DriverKoin>);
+    return queryRunner.manager.create(
+      DriverKoin,
+      rows[0] as Partial<DriverKoin>,
+    );
   }
 
   @Cron('5 0 * * *')
@@ -71,7 +74,9 @@ export class DailyPaymentsService {
         .andWhere('r.end_date >= :today', { today: todayStr })
         .getMany();
 
-      this.logger.log(`Found ${activeRentals.length} active rentals for daily payment generation`);
+      this.logger.log(
+        `Found ${activeRentals.length} active rentals for daily payment generation`,
+      );
 
       for (const rental of activeRentals) {
         const existing = await this.dailyPaymentsRepository.findOne({
@@ -84,14 +89,15 @@ export class DailyPaymentsService {
         if (existing) continue;
 
         const dailyAmount = Number(rental.daily_rate) || 0;
-        const rentalNumber = rental.rental_number || `RENT-${rental.id.slice(0, 8)}`;
+        const rentalNumber =
+          rental.rental_number || `RENT-${rental.id.slice(0, 8)}`;
 
         const now = new Date();
         const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
         const lastPayment = await this.dailyPaymentsRepository
           .createQueryBuilder('dp')
-          .where("dp.reference_number LIKE :prefix", { prefix: `PAY-${ym}/%` })
-          .orderBy("dp.reference_number", "DESC")
+          .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ym}/%` })
+          .orderBy('dp.reference_number', 'DESC')
           .getOne();
         let seq = 1;
         if (lastPayment) {
@@ -113,7 +119,9 @@ export class DailyPaymentsService {
         });
 
         await this.dailyPaymentsRepository.save(dailyPayment);
-        this.logger.log(`Created daily payment: ${rental.rental_number} ${todayStr} Rp ${dailyAmount}`);
+        this.logger.log(
+          `Created daily payment: ${rental.rental_number} ${todayStr} Rp ${dailyAmount}`,
+        );
       }
 
       this.logger.log('Daily payments generation completed');
@@ -122,7 +130,11 @@ export class DailyPaymentsService {
     }
   }
 
-  async getDailyPayments(query?: { page?: number; limit?: number; search?: string }) {
+  async getDailyPayments(query?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }) {
     const page = query?.page || 1;
     const limit = query?.limit || 50;
     const skip = (page - 1) * limit;
@@ -141,13 +153,13 @@ export class DailyPaymentsService {
 
     qb.where(
       '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
-      { today: todayStr, unpaid: 'unpaid' }
+      { today: todayStr, unpaid: 'unpaid' },
     );
 
     if (query?.search) {
       qb.andWhere(
         `(driver.first_name ILIKE :search OR driver.last_name ILIKE :search OR dp.reference_number ILIKE :search OR vehicle.license_plate ILIKE :search)`,
-        { search: `%${query.search}%` }
+        { search: `%${query.search}%` },
       );
     }
 
@@ -158,7 +170,9 @@ export class DailyPaymentsService {
       rental_id: dp.rental_id,
       rental_number: dp.rental?.rental_number || '-',
       driver_id: dp.driver_id,
-      driver_name: dp.driver ? `${dp.driver.first_name} ${dp.driver.last_name}` : '-',
+      driver_name: dp.driver
+        ? `${dp.driver.first_name} ${dp.driver.last_name}`
+        : '-',
       vehicle_id: dp.vehicle_id,
       vehicle_name: dp.vehicle ? `${dp.vehicle.merk} ${dp.vehicle.model}` : '-',
       license_plate: dp.vehicle?.license_plate || '-',
@@ -185,7 +199,11 @@ export class DailyPaymentsService {
     };
   }
 
-  async getAdminFeePayments(query?: { page?: number; limit?: number; search?: string }) {
+  async getAdminFeePayments(query?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }) {
     const page = query?.page || 1;
     const limit = query?.limit || 10;
 
@@ -197,7 +215,10 @@ export class DailyPaymentsService {
     };
   }
 
-  async getMyDailyPayments(driverId: string, query?: { page?: number; limit?: number }) {
+  async getMyDailyPayments(
+    driverId: string,
+    query?: { page?: number; limit?: number },
+  ) {
     const page = query?.page || 1;
     const limit = query?.limit || 50;
     const skip = (page - 1) * limit;
@@ -252,7 +273,9 @@ export class DailyPaymentsService {
   }
 
   async updateStatus(id: string, status: string) {
-    const payment = await this.dailyPaymentsRepository.findOne({ where: { id } });
+    const payment = await this.dailyPaymentsRepository.findOne({
+      where: { id },
+    });
     if (!payment) {
       return { success: false, message: 'Daily payment not found' };
     }
@@ -290,7 +313,9 @@ export class DailyPaymentsService {
         rental_number: dp.rental?.rental_number || '-',
         driver_id: dp.driver_id,
         vehicle_id: dp.vehicle_id,
-        vehicle_name: dp.vehicle ? `${dp.vehicle.merk} ${dp.vehicle.model}` : '-',
+        vehicle_name: dp.vehicle
+          ? `${dp.vehicle.merk} ${dp.vehicle.model}`
+          : '-',
         license_plate: dp.vehicle?.license_plate || '-',
         vendor_name: dp.vehicle?.vendor?.name || '-',
         payment_date: dp.payment_date,
@@ -304,7 +329,11 @@ export class DailyPaymentsService {
     };
   }
 
-  async payMyDailyPayment(id: string, dto: PayDailyPaymentDto, driverId: string) {
+  async payMyDailyPayment(
+    id: string,
+    dto: PayDailyPaymentDto,
+    driverId: string,
+  ) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -360,23 +389,22 @@ export class DailyPaymentsService {
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           reference_id: id,
-          reference_number: dto.reference_number || row.reference_number || `PAY-${Date.now()}`,
-          notes: dto.notes || `Koin berkurang untuk tagihan harian ${row.reference_number || id}`,
+          reference_number:
+            dto.reference_number || row.reference_number || `PAY-${Date.now()}`,
+          notes:
+            dto.notes ||
+            `Koin berkurang untuk tagihan harian ${row.reference_number || id}`,
         });
         await queryRunner.manager.save(tx);
       }
 
-      await queryRunner.manager.update(
-        DailyPayment,
-        id,
-        {
-          status: 'paid',
-          reference_number: dto.reference_number || row.reference_number,
-          notes: dto.notes
-            ? `${row.notes || ''}${row.notes ? '\n' : ''}${dto.notes}`.trim()
-            : row.notes,
-        },
-      );
+      await queryRunner.manager.update(DailyPayment, id, {
+        status: 'paid',
+        reference_number: dto.reference_number || row.reference_number,
+        notes: dto.notes
+          ? `${row.notes || ''}${row.notes ? '\n' : ''}${dto.notes}`.trim()
+          : row.notes,
+      });
 
       await queryRunner.commitTransaction();
 
@@ -402,7 +430,9 @@ export class DailyPaymentsService {
       ) {
         throw error;
       }
-      throw new InternalServerErrorException('Gagal memproses pembayaran tagihan harian');
+      throw new InternalServerErrorException(
+        'Gagal memproses pembayaran tagihan harian',
+      );
     } finally {
       await queryRunner.release();
     }

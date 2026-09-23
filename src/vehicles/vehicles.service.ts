@@ -50,10 +50,7 @@ export class VehiclesService {
       qb.andWhere('v.vendor_id = :vendorId', { vendorId: query.vendor_id });
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -159,8 +156,8 @@ export class VehiclesService {
     return vehicle;
   }
 
-  async fetchVehiclesFromGpsid() {
-    const data = await this.gpsidService.fetchVehicles();
+  async fetchVehiclesFromGpsid(forceRefresh = false) {
+    const data = await this.gpsidService.fetchVehicles({ forceRefresh });
     return data;
   }
 
@@ -300,7 +297,15 @@ export class VehiclesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'year', 'licensePlate', 'vendor', 'dailyRate', 'pricingCategory', 'status'];
+      : [
+          'name',
+          'year',
+          'licensePlate',
+          'vendor',
+          'dailyRate',
+          'pricingCategory',
+          'status',
+        ];
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
       .leftJoinAndSelect('v.vendor', 'vendor');
@@ -313,18 +318,25 @@ export class VehiclesService {
     }
 
     if (query.start_date) {
-      qb.andWhere('v.created_at >= :start', { start: query.start_date + ' 00:00:00' });
+      qb.andWhere('v.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
     }
 
     if (query.end_date) {
-      qb.andWhere('v.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
+      qb.andWhere('v.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
     }
 
     const vehicles = await qb.orderBy('v.created_at', 'DESC').getMany();
 
     const columnMap: Record<string, (v: Vehicle) => string> = {
       name: (v) => `${v.merk} ${v.model}`.trim() || '-',
-      year: (v) => v.launching_year ? new Date(v.launching_year).getFullYear().toString() : '-',
+      year: (v) =>
+        v.launching_year
+          ? new Date(v.launching_year).getFullYear().toString()
+          : '-',
       licensePlate: (v) => v.license_plate || '-',
       dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
       pricingCategory: (v) => v.pricing_category || '-',
@@ -414,7 +426,7 @@ export class VehiclesService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -435,7 +447,12 @@ export class VehiclesService {
 
     const tableBody: any[][] = [];
 
-    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
 
     for (const row of rows) {
       tableBody.push(columns.map((col) => row[col] || ''));

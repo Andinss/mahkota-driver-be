@@ -13,7 +13,14 @@ import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
   controllers: [RentalsController],
   providers: [RentalsService],
   imports: [
-    TypeOrmModule.forFeature([Rental, Driver, Vehicle, Finance, FinancePayment, DailyPayment]),
+    TypeOrmModule.forFeature([
+      Rental,
+      Driver,
+      Vehicle,
+      Finance,
+      FinancePayment,
+      DailyPayment,
+    ]),
   ],
   exports: [RentalsService],
 })

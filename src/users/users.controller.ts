@@ -77,15 +77,17 @@ export class UsersController {
     const meta = extractRequestMeta(req);
     const result = await this.usersService.create(addUserDto);
     const user = result?.data || result;
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'CREATE_USER',
-      target: `user/${user?.id || ''}`,
-      details: `Created user ${addUserDto.email}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_USER',
+        target: `user/${user?.id || ''}`,
+        details: `Created user ${addUserDto.email}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -95,15 +97,17 @@ export class UsersController {
     const userId = req.params.id;
     const meta = extractRequestMeta(req);
     const result = await this.usersService.update(userId, updateUserDto);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'UPDATE_USER',
-      target: `user/${userId}`,
-      details: `Updated user ${userId}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'UPDATE_USER',
+        target: `user/${userId}`,
+        details: `Updated user ${userId}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -113,15 +117,17 @@ export class UsersController {
     const userId = req.params.employid;
     const meta = extractRequestMeta(req);
     const result = await this.usersService.delete(userId);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'DELETE_USER',
-      target: `user/${userId}`,
-      details: `Deleted user ${userId}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'DELETE_USER',
+        target: `user/${userId}`,
+        details: `Deleted user ${userId}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 }

@@ -50,14 +50,24 @@ export class AuditService {
 
   async findById(id: string) {
     const log = await this.auditRepository.findOne({ where: { id } });
-    return { success: true, message: 'Audit log retrieved successfully', data: log };
+    return {
+      success: true,
+      message: 'Audit log retrieved successfully',
+      data: log,
+    };
   }
 
   async getStats() {
     const total = await this.auditRepository.count();
-    const securityAlerts = await this.auditRepository.count({ where: { action: Like('security%') } });
-    const userActions = await this.auditRepository.count({ where: { status: 'success' } });
-    const failedRequests = await this.auditRepository.count({ where: { status: 'failed' } });
+    const securityAlerts = await this.auditRepository.count({
+      where: { action: Like('security%') },
+    });
+    const userActions = await this.auditRepository.count({
+      where: { status: 'success' },
+    });
+    const failedRequests = await this.auditRepository.count({
+      where: { status: 'failed' },
+    });
 
     return {
       success: true,
@@ -75,23 +85,31 @@ export class AuditService {
     const qb = this.auditRepository.createQueryBuilder('a');
 
     if (query.search) {
-      qb.where('(a.username ILIKE :search OR a.action ILIKE :search OR a.target ILIKE :search)', {
-        search: `%${query.search}%`,
-      });
+      qb.where(
+        '(a.username ILIKE :search OR a.action ILIKE :search OR a.target ILIKE :search)',
+        {
+          search: `%${query.search}%`,
+        },
+      );
     }
 
     if (query.start_date) {
-      qb.andWhere('a.created_at >= :start', { start: query.start_date + ' 00:00:00' });
+      qb.andWhere('a.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
     }
 
     if (query.end_date) {
-      qb.andWhere('a.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
+      qb.andWhere('a.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
     }
 
     const logs = await qb.orderBy('a.created_at', 'DESC').getMany();
 
     const columnMap: Record<string, (l: AuditLog) => string> = {
-      timestamp: (l) => l.created_at ? new Date(l.created_at).toLocaleString('id-ID') : '-',
+      timestamp: (l) =>
+        l.created_at ? new Date(l.created_at).toLocaleString('id-ID') : '-',
       user: (l) => l.username || '-',
       action: (l) => l.action || '-',
       target: (l) => l.target || '-',
@@ -176,7 +194,7 @@ export class AuditService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -197,7 +215,12 @@ export class AuditService {
 
     const tableBody: any[][] = [];
 
-    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
 
     for (const row of rows) {
       tableBody.push(columns.map((col) => row[col] || ''));

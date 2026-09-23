@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Express } from 'express';
@@ -35,7 +40,11 @@ export class SupervisorService {
     };
   }
 
-  async create(data: AddDriverDto, userId: string, files?: Express.Multer.File[]) {
+  async create(
+    data: AddDriverDto,
+    userId: string,
+    files?: Express.Multer.File[],
+  ) {
     const count = await this.driversRepository.count({
       where: { created_by_id: userId },
     });
@@ -50,7 +59,11 @@ export class SupervisorService {
           const filePath = file.path.replace(/\\/g, '/');
           if (originalName.includes('ktp')) data.national_id_card = filePath;
           else if (originalName.includes('sim')) data.sim_card = filePath;
-          else if (originalName.includes('foto') || originalName.includes('profil')) data.profile_photo = filePath;
+          else if (
+            originalName.includes('foto') ||
+            originalName.includes('profil')
+          )
+            data.profile_photo = filePath;
           else if (originalName.includes('rumah')) data.garage_photo = filePath;
           else data.npwp_photo = filePath;
         }
@@ -71,14 +84,21 @@ export class SupervisorService {
       console.error('Failed to create driver:', error);
       if (files && files.length > 0) {
         for (const file of files) {
-          try { unlinkSync(file.path); } catch {}
+          try {
+            unlinkSync(file.path);
+          } catch {}
         }
       }
       throw new InternalServerErrorException('Failed to create driver');
     }
   }
 
-  async update(driverId: string, data: Partial<Driver>, userId: string, files?: Express.Multer.File[]) {
+  async update(
+    driverId: string,
+    data: Partial<Driver>,
+    userId: string,
+    files?: Express.Multer.File[],
+  ) {
     const existingDriver = await this.findOwnedDriver(driverId, userId);
 
     try {
@@ -88,15 +108,31 @@ export class SupervisorService {
           const filePath = file.path.replace(/\\/g, '/');
           let oldFilePath: string | null | undefined = null;
 
-          if (originalName.includes('ktp')) { oldFilePath = existingDriver.national_id_card; data.national_id_card = filePath; }
-          else if (originalName.includes('sim')) { oldFilePath = existingDriver.sim_card; data.sim_card = filePath; }
-          else if (originalName.includes('foto') || originalName.includes('profil')) { oldFilePath = existingDriver.profile_photo; data.profile_photo = filePath; }
-          else if (originalName.includes('rumah')) { oldFilePath = existingDriver.garage_photo; data.garage_photo = filePath; }
-          else { oldFilePath = existingDriver.npwp_photo; data.npwp_photo = filePath; }
+          if (originalName.includes('ktp')) {
+            oldFilePath = existingDriver.national_id_card;
+            data.national_id_card = filePath;
+          } else if (originalName.includes('sim')) {
+            oldFilePath = existingDriver.sim_card;
+            data.sim_card = filePath;
+          } else if (
+            originalName.includes('foto') ||
+            originalName.includes('profil')
+          ) {
+            oldFilePath = existingDriver.profile_photo;
+            data.profile_photo = filePath;
+          } else if (originalName.includes('rumah')) {
+            oldFilePath = existingDriver.garage_photo;
+            data.garage_photo = filePath;
+          } else {
+            oldFilePath = existingDriver.npwp_photo;
+            data.npwp_photo = filePath;
+          }
 
           if (oldFilePath && oldFilePath !== filePath) {
             try {
-              const fullPath = oldFilePath.startsWith('/') ? oldFilePath : `./${oldFilePath}`;
+              const fullPath = oldFilePath.startsWith('/')
+                ? oldFilePath
+                : `./${oldFilePath}`;
               if (existsSync(fullPath)) unlinkSync(fullPath);
             } catch (err) {
               console.error(`Failed to delete old file ${oldFilePath}:`, err);
@@ -107,7 +143,9 @@ export class SupervisorService {
 
       const { created_by_id, ...safeData } = data as any;
       await this.driversRepository.update(existingDriver.id, safeData);
-      const driver = await this.driversRepository.findOne({ where: { id: existingDriver.id } });
+      const driver = await this.driversRepository.findOne({
+        where: { id: existingDriver.id },
+      });
 
       return {
         success: true,
@@ -118,7 +156,9 @@ export class SupervisorService {
       console.error('Failed to update driver:', error);
       if (files && files.length > 0) {
         for (const file of files) {
-          try { if (existsSync(file.path)) unlinkSync(file.path); } catch {}
+          try {
+            if (existsSync(file.path)) unlinkSync(file.path);
+          } catch {}
         }
       }
       throw new InternalServerErrorException('Failed to update driver');
@@ -129,13 +169,18 @@ export class SupervisorService {
     const existingDriver = await this.findOwnedDriver(driverId, userId);
 
     const fileFields = [
-      existingDriver.profile_photo, existingDriver.national_id_card,
-      existingDriver.sim_card, existingDriver.garage_photo, existingDriver.npwp_photo,
+      existingDriver.profile_photo,
+      existingDriver.national_id_card,
+      existingDriver.sim_card,
+      existingDriver.garage_photo,
+      existingDriver.npwp_photo,
     ];
     for (const filePath of fileFields) {
       if (filePath) {
         try {
-          const fullPath = filePath.startsWith('/') ? filePath : `./${filePath}`;
+          const fullPath = filePath.startsWith('/')
+            ? filePath
+            : `./${filePath}`;
           if (existsSync(fullPath)) unlinkSync(fullPath);
         } catch (err) {
           console.error(`Failed to delete file ${filePath}:`, err);
@@ -158,7 +203,10 @@ export class SupervisorService {
     };
   }
 
-  private async findOwnedDriver(driverId: string, userId: string): Promise<Driver> {
+  private async findOwnedDriver(
+    driverId: string,
+    userId: string,
+  ): Promise<Driver> {
     const driver = await this.driversRepository.findOne({
       where: { id: driverId, created_by_id: userId },
     });

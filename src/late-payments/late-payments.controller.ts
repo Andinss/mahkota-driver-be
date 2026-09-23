@@ -45,19 +45,13 @@ export class LatePaymentsController {
 
   @Post(':id/approve')
   @Permissions('finance.approve')
-  approve(
-    @Param('id') id: string,
-    @Body() dto: ApproveRejectDto,
-  ) {
+  approve(@Param('id') id: string, @Body() dto: ApproveRejectDto) {
     return this.latePaymentsService.approve(id, dto.admin_note);
   }
 
   @Post(':id/reject')
   @Permissions('finance.approve')
-  reject(
-    @Param('id') id: string,
-    @Body() dto: ApproveRejectDto,
-  ) {
+  reject(@Param('id') id: string, @Body() dto: ApproveRejectDto) {
     return this.latePaymentsService.reject(id, dto.admin_note);
   }
 

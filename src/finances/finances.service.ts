@@ -5,7 +5,13 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource, QueryRunner, QueryFailedError } from 'typeorm';
+import {
+  Repository,
+  In,
+  DataSource,
+  QueryRunner,
+  QueryFailedError,
+} from 'typeorm';
 import { Finance } from './entities/finance.entity';
 import { FinancePayment } from './entities/finance-payment.entity';
 import { Rental } from '../rentals/entities/rental.entity';
@@ -23,12 +29,7 @@ import { RentalsService } from '../rentals/rentals.service';
 import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
 
-const FINANCE_STATUS = [
-  'unpaid',
-  'pending',
-  'paid',
-  'cancelled',
-];
+const FINANCE_STATUS = ['unpaid', 'pending', 'paid', 'cancelled'];
 
 interface PaymentTotals {
   paid: number;
@@ -114,10 +115,10 @@ export class FinancesService {
 
     // Rental yang sudah pernah terhubung finance manapun = sudah 'join' ->
     // tidak dikenakan fee lagi.
-    const raw = (await manager.query(
+    const raw = await manager.query(
       'SELECT DISTINCT rental_id FROM finance_rentals WHERE rental_id = ANY($1)',
       [foundIds],
-    )) as { rental_id: string }[];
+    );
     const joinedIds = new Set(raw.map((row) => row.rental_id));
 
     let fee = 0;
@@ -202,8 +203,7 @@ export class FinancesService {
       paid_amount: paidAmount,
       remaining_amount: remainingAmount,
       payments_count:
-        finance.payments?.length ??
-        (typeof t.count === 'number' ? t.count : 0),
+        finance.payments?.length ?? (typeof t.count === 'number' ? t.count : 0),
       notes: finance.notes,
       payer: finance.payer,
       driver_id: finance.driver_id,
@@ -300,7 +300,10 @@ export class FinancesService {
       .orderBy('r.created_at', 'DESC')
       .getMany();
 
-    const map = new Map<string, { vehicle?: Vehicle; vendor?: VendorVehicle }>();
+    const map = new Map<
+      string,
+      { vehicle?: Vehicle; vendor?: VendorVehicle }
+    >();
     for (const r of rows) {
       if (!map.has(r.driver_id) && r.vehicle) {
         map.set(r.driver_id, {
@@ -478,7 +481,7 @@ export class FinancesService {
       "SELECT COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid'",
     );
 
-    // Total bulan ini 
+    // Total bulan ini
     const monthResult = await this.financesRepository
       .createQueryBuilder('f')
       .select('COALESCE(SUM(f.amount_received), 0)', 'total')
@@ -495,7 +498,7 @@ export class FinancesService {
       "SELECT COALESCE(SUM(amount), 0) AS total FROM daily_payments WHERE status = 'paid' AND EXTRACT(MONTH FROM payment_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM payment_date) = EXTRACT(YEAR FROM CURRENT_DATE)",
     );
 
-    // Total hari ini 
+    // Total hari ini
     const todayResult = await this.financesRepository
       .createQueryBuilder('f')
       .select('COALESCE(SUM(f.amount_received), 0)', 'total')
@@ -548,8 +551,7 @@ export class FinancesService {
       success: true,
       message: 'Finance summary retrieved successfully',
       data: {
-        total_amount_received:
-          Number(totalResult?.total || 0) + dailyTotal,
+        total_amount_received: Number(totalResult?.total || 0) + dailyTotal,
         total_this_month: Number(monthResult?.total || 0) + dailyMonth,
         total_today: Number(todayResult?.total || 0) + dailyToday,
         total_active: totalActive,
@@ -778,9 +780,7 @@ export class FinancesService {
       const joinFee = autoJoinFee;
 
       if (!(joinFee > 0)) {
-        throw new BadRequestException(
-          'Admin fee harus lebih dari 0',
-        );
+        throw new BadRequestException('Admin fee harus lebih dari 0');
       }
 
       const initialAmount = Number(data.amount_received) || 0;
@@ -853,11 +853,7 @@ export class FinancesService {
 
       const totals = this.getPaymentTotals(saved.payments);
       saved.amount_received = totals.paid;
-      saved.status = this.deriveStatus(
-        joinFee,
-        totals.paid,
-        totals.pending,
-      );
+      saved.status = this.deriveStatus(joinFee, totals.paid, totals.pending);
       await queryRunner.manager.save(saved);
 
       for (const payment of saved.payments) {
@@ -1200,9 +1196,7 @@ export class FinancesService {
       ) {
         throw error;
       }
-      throw new InternalServerErrorException(
-        'Failed to create driver payment',
-      );
+      throw new InternalServerErrorException('Failed to create driver payment');
     } finally {
       await queryRunner.release();
     }
@@ -1537,7 +1531,7 @@ export class FinancesService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-        : [
+      : [
           'reference_number',
           'payer',
           'paid_amount',
@@ -1602,9 +1596,7 @@ export class FinancesService {
           ? new Date(v.payment_date).toLocaleDateString('id-ID')
           : '-',
       created_at: (v) =>
-        v.created_at
-          ? new Date(v.created_at).toLocaleDateString('id-ID')
-          : '-',
+        v.created_at ? new Date(v.created_at).toLocaleDateString('id-ID') : '-',
       fee_admin_join: (v) =>
         Number(v.fee_admin_join) > 0
           ? `Rp ${Number(v.fee_admin_join).toLocaleString('id-ID')}`
@@ -1615,8 +1607,9 @@ export class FinancesService {
         v.driver ? `${v.driver.first_name} ${v.driver.last_name}`.trim() : '-',
       notes: (v) => v.notes || '-',
       id: (v) => v.id || '-',
-      vehicle: (v) => v.vehicle ? `${v.vehicle.merk} ${v.vehicle.model}`.trim() : '-',
-      vendor: (v) => v.vendor ? v.vendor.name || '-' : '-',
+      vehicle: (v) =>
+        v.vehicle ? `${v.vehicle.merk} ${v.vehicle.model}`.trim() : '-',
+      vendor: (v) => (v.vendor ? v.vendor.name || '-' : '-'),
       rental_period: (v) => {
         const rentals = v.rentals || [];
         if (rentals.length > 0) {
@@ -1707,7 +1700,7 @@ export class FinancesService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,

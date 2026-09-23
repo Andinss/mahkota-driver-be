@@ -79,7 +79,8 @@ export class PermissionsService {
 
   async delete(id: string) {
     const result = await this.permissionsRepository.delete(id);
-    if (result.affected === 0) throw new NotFoundException('Permission not found');
+    if (result.affected === 0)
+      throw new NotFoundException('Permission not found');
     return { success: true, message: 'Permission deleted successfully' };
   }
 }

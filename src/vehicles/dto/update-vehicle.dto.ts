@@ -58,4 +58,12 @@ export class UpdateVehicleDto {
 
   @IsOptional()
   vendor_id!: string;
+
+  @IsOptional()
+  @IsString()
+  imei!: string;
+
+  @IsOptional()
+  @IsString()
+  device_name!: string;
 }

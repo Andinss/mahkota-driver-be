@@ -76,10 +76,7 @@ export class RentalsService {
       qb.andWhere('r.rental_service = :svc', { svc: query.rental_service });
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -159,8 +156,14 @@ export class RentalsService {
       .createQueryBuilder('r')
       .select('COALESCE(AVG(r.daily_rate), 0)', 'avg_daily_rate')
       .addSelect('COUNT(r.id)', 'total_rentals')
-      .addSelect('COALESCE(SUM(CASE WHEN r.rental_service = \'lepas kunci\' THEN 1 ELSE 0 END), 0)', 'lepas_kunci')
-      .addSelect('COALESCE(SUM(CASE WHEN r.rental_service = \'pakai supir\' THEN 1 ELSE 0 END), 0)', 'pakai_supir')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN r.rental_service = 'lepas kunci' THEN 1 ELSE 0 END), 0)",
+        'lepas_kunci',
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN r.rental_service = 'pakai supir' THEN 1 ELSE 0 END), 0)",
+        'pakai_supir',
+      )
       .getRawOne();
 
     return {
@@ -195,14 +198,22 @@ export class RentalsService {
     await queryRunner.startTransaction();
 
     try {
-      const driver = await this.driversRepository.findOne({ where: { id: data.driver_id } });
+      const driver = await this.driversRepository.findOne({
+        where: { id: data.driver_id },
+      });
       if (!driver) {
-        throw new NotFoundException(`Driver with id ${data.driver_id} not found`);
+        throw new NotFoundException(
+          `Driver with id ${data.driver_id} not found`,
+        );
       }
 
-      const vehicle = await this.vehiclesRepository.findOne({ where: { id: data.vehicle_id } });
+      const vehicle = await this.vehiclesRepository.findOne({
+        where: { id: data.vehicle_id },
+      });
       if (!vehicle) {
-        throw new NotFoundException(`Vehicle with id ${data.vehicle_id} not found`);
+        throw new NotFoundException(
+          `Vehicle with id ${data.vehicle_id} not found`,
+        );
       }
 
       if (files && files.length > 0) {
@@ -224,7 +235,9 @@ export class RentalsService {
       });
       const result = await queryRunner.manager.save(rental);
 
-      await queryRunner.manager.update(Vehicle, data.vehicle_id, { status: 'rented' });
+      await queryRunner.manager.update(Vehicle, data.vehicle_id, {
+        status: 'rented',
+      });
 
       // Auto-create Finance linked to this Rental
       const totalAmount = Number(data.daily_rate) * Number(data.total_duration);
@@ -253,8 +266,8 @@ export class RentalsService {
         const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
         const lastFinance = await queryRunner.manager
           .createQueryBuilder(Finance, 'f')
-          .where("f.reference_number LIKE :prefix", { prefix: `ADF-${ym}/%` })
-          .orderBy("f.reference_number", "DESC")
+          .where('f.reference_number LIKE :prefix', { prefix: `ADF-${ym}/%` })
+          .orderBy('f.reference_number', 'DESC')
           .getOne();
         let seq = 1;
         if (lastFinance) {
@@ -282,14 +295,18 @@ export class RentalsService {
 
       // Auto-create today's daily payment so it shows immediately in admin dashboard
       const today = new Date();
-      const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayLocal = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
       const todayStr = toLocalDateString(todayLocal);
 
       const ymPay = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
       const lastDailyPayment = await queryRunner.manager
         .createQueryBuilder(DailyPayment, 'dp')
-        .where("dp.reference_number LIKE :prefix", { prefix: `PAY-${ymPay}/%` })
-        .orderBy("dp.reference_number", "DESC")
+        .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ymPay}/%` })
+        .orderBy('dp.reference_number', 'DESC')
         .getOne();
       let seqPay = 1;
       if (lastDailyPayment) {
@@ -320,11 +337,13 @@ export class RentalsService {
         success: true,
         message: 'Rental created successfully',
         data: result,
-        finance: savedFinance ? {
-          id: savedFinance.id,
-          reference_number: savedFinance.reference_number,
-          admin_fee: adminFee,
-        } : null,
+        finance: savedFinance
+          ? {
+              id: savedFinance.id,
+              reference_number: savedFinance.reference_number,
+              admin_fee: adminFee,
+            }
+          : null,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -336,7 +355,10 @@ export class RentalsService {
           } catch {}
         }
       }
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
       throw new InternalServerErrorException('Failed to create rental');
@@ -436,7 +458,18 @@ export class RentalsService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['transactionId', 'driverName', 'driverId', 'vehicleName', 'vehiclePlate', 'rentalPeriod', 'duration', 'rentalDuration', 'rentalService', 'engine'];
+      : [
+          'transactionId',
+          'driverName',
+          'driverId',
+          'vehicleName',
+          'vehiclePlate',
+          'rentalPeriod',
+          'duration',
+          'rentalDuration',
+          'rentalService',
+          'engine',
+        ];
 
     const qb = this.rentalsRepository
       .createQueryBuilder('r')
@@ -459,20 +492,27 @@ export class RentalsService {
     }
 
     if (query.start_date) {
-      qb.andWhere('r.created_at >= :start', { start: query.start_date + ' 00:00:00' });
+      qb.andWhere('r.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
     }
 
     if (query.end_date) {
-      qb.andWhere('r.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
+      qb.andWhere('r.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
     }
 
     const rentals = await qb.orderBy('r.created_at', 'DESC').getMany();
 
     const columnMap: Record<string, (r: Rental) => string> = {
       transactionId: (r) => r.rental_number || '-',
-      driverName: (r) => [r.driver?.first_name, r.driver?.last_name].filter(Boolean).join(' ') || '-',
+      driverName: (r) =>
+        [r.driver?.first_name, r.driver?.last_name].filter(Boolean).join(' ') ||
+        '-',
       driverId: (r) => r.driver?.employee_id || r.driver_id?.slice(0, 8) || '-',
-      vehicleName: (r) => [r.vehicle?.merk, r.vehicle?.model].filter(Boolean).join(' ') || '-',
+      vehicleName: (r) =>
+        [r.vehicle?.merk, r.vehicle?.model].filter(Boolean).join(' ') || '-',
       vehiclePlate: (r) => r.vehicle?.license_plate || '-',
       rentalPeriod: (r) => `${r.start_date} to ${r.end_date}`,
       duration: (r) => String(r.total_duration) || '-',
@@ -576,7 +616,7 @@ export class RentalsService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -597,7 +637,12 @@ export class RentalsService {
 
     const tableBody: any[][] = [];
 
-    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
 
     for (const row of rows) {
       tableBody.push(columns.map((col) => row[col] || ''));
@@ -656,14 +701,18 @@ export class RentalsService {
       }
 
       if (existingRental.vehicle_id) {
-        await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, { status: 'Available' });
+        await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, {
+          status: 'Available',
+        });
       }
 
       const fileFields = [existingRental.document_contract];
       for (const filePath of fileFields) {
         if (filePath) {
           try {
-            const fullPath = filePath.startsWith('/') ? filePath : `./${filePath}`;
+            const fullPath = filePath.startsWith('/')
+              ? filePath
+              : `./${filePath}`;
             if (existsSync(fullPath)) {
               unlinkSync(fullPath);
             }

@@ -35,9 +35,16 @@ export class Vehicle {
   @Column({ type: 'varchar', length: 100 })
   color!: string;
 
-    @Column({
+  @Column({
     type: 'enum',
-    enum: ['Available', 'Maintenance', 'Service', 'Reserved', 'rented', 'retrieved'],
+    enum: [
+      'Available',
+      'Maintenance',
+      'Service',
+      'Reserved',
+      'rented',
+      'retrieved',
+    ],
     default: 'Available',
   })
   status!: string;
@@ -67,6 +74,12 @@ export class Vehicle {
 
   @Column({ type: 'uuid', nullable: true })
   vendor_id!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  imei!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  device_name!: string;
 
   @ManyToOne(() => VendorVehicle, (vendor) => vendor.vehicles, {
     onDelete: 'SET NULL',
