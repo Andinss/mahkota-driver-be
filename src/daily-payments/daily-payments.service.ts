@@ -79,12 +79,11 @@ export class DailyPaymentsService {
       );
 
       for (const rental of activeRentals) {
-        const existing = await this.dailyPaymentsRepository.findOne({
-          where: {
-            rental_id: rental.id,
-            payment_date: today,
-          },
-        });
+        const existing = await this.dailyPaymentsRepository
+          .createQueryBuilder('dp')
+          .where('dp.rental_id = :rentalId', { rentalId: rental.id })
+          .andWhere('dp.payment_date = :today', { today: todayStr })
+          .getOne();
 
         if (existing) continue;
 
@@ -111,7 +110,7 @@ export class DailyPaymentsService {
           rental_id: rental.id,
           driver_id: rental.driver_id,
           vehicle_id: rental.vehicle_id,
-          payment_date: today,
+          payment_date: todayStr,
           amount: dailyAmount,
           status: 'unpaid',
           reference_number: refNumber,
@@ -134,6 +133,7 @@ export class DailyPaymentsService {
     page?: number;
     limit?: number;
     search?: string;
+    status?: string;
   }) {
     const page = query?.page || 1;
     const limit = query?.limit || 50;
@@ -151,10 +151,14 @@ export class DailyPaymentsService {
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
 
-    qb.where(
-      '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
-      { today: todayStr, unpaid: 'unpaid' },
-    );
+    if (query?.status) {
+      qb.where('dp.status = :status', { status: query.status });
+    } else {
+      qb.where(
+        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
+        { today: todayStr, unpaid: 'unpaid' },
+      );
+    }
 
     if (query?.search) {
       qb.andWhere(
@@ -223,19 +227,12 @@ export class DailyPaymentsService {
     const limit = query?.limit || 50;
     const skip = (page - 1) * limit;
 
-    const today = getTodayStart();
-    const todayStr = toLocalDateString(today);
-
     const qb = this.dailyPaymentsRepository
       .createQueryBuilder('dp')
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
       .where('dp.driver_id = :driverId', { driverId })
-      .andWhere(
-        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
-        { today: todayStr, unpaid: 'unpaid' },
-      )
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
 

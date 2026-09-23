@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isUUID } from 'class-validator';
 import { GpsTracking } from './entities/gps-tracking.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import {
@@ -140,14 +141,19 @@ export class MonitoringService {
       throw new BadRequestException('Invalid engine status. Must be: on, off');
     }
 
-    const vehicle = await this.vehicleRepository.findOne({
-      where: { id: vehicleId },
-    });
+    let vehicle = isUUID(vehicleId)
+      ? await this.vehicleRepository.findOne({ where: { id: vehicleId } })
+      : null;
+    if (!vehicle) {
+      vehicle = await this.vehicleRepository.findOne({
+        where: { imei: vehicleId },
+      });
+    }
     if (!vehicle) {
       throw new NotFoundException('Vehicle not found');
     }
 
-    await this.vehicleRepository.update(vehicleId, {
+    await this.vehicleRepository.update(vehicle.id, {
       engine_status: engine_status,
     });
 
@@ -183,14 +189,19 @@ export class MonitoringService {
       );
     }
 
-    const vehicle = await this.vehicleRepository.findOne({
-      where: { id: vehicleId },
-    });
+    let vehicle = isUUID(vehicleId)
+      ? await this.vehicleRepository.findOne({ where: { id: vehicleId } })
+      : null;
+    if (!vehicle) {
+      vehicle = await this.vehicleRepository.findOne({
+        where: { imei: vehicleId },
+      });
+    }
     if (!vehicle) {
       throw new NotFoundException('Vehicle not found');
     }
 
-    await this.vehicleRepository.update(vehicleId, {
+    await this.vehicleRepository.update(vehicle.id, {
       status,
     });
 
