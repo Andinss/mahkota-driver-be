@@ -121,10 +121,11 @@ export class VehiclesService {
       statusBreakdown[row.status] = Number(row.count);
     }
 
-    const totalRented = statusBreakdown['Reserved'] || 0;
+    const totalRented = statusBreakdown['rented'] || 0;
     const totalAvailable = statusBreakdown['Available'] || 0;
     const totalMaintenance = statusBreakdown['Maintenance'] || 0;
     const totalService = statusBreakdown['Service'] || 0;
+    const totalReserved = statusBreakdown['Reserved'] || 0;
     const totalRetrieved = statusBreakdown['retrieved'] || 0;
 
     return {
@@ -136,6 +137,7 @@ export class VehiclesService {
         available: totalAvailable,
         maintenance: totalMaintenance,
         service: totalService,
+        reserved: totalReserved,
         retrieved: totalRetrieved,
         status_breakdown: statusBreakdown,
       },
