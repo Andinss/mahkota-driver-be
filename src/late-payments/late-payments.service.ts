@@ -89,7 +89,7 @@ export class LatePaymentsService {
       });
 
       if (rental_ids && rental_ids.length > 0) {
-        payment.rentals = rental_ids.map((id) => ({ id } as any));
+        payment.rentals = rental_ids.map((id) => ({ id }) as any);
       }
 
       const result = await this.latePaymentRepository.save(payment);

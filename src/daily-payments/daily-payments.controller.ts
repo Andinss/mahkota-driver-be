@@ -44,7 +44,11 @@ export class DailyPaymentsController {
   ) {
     const driverId = req.user?.driver?.id || req.user?.driver_id;
     if (!driverId) {
-      return { success: true, data: [], meta: { total: 0, page: 1, limit: 50, totalPages: 0 } };
+      return {
+        success: true,
+        data: [],
+        meta: { total: 0, page: 1, limit: 50, totalPages: 0 },
+      };
     }
     return this.dailyPaymentsService.getMyDailyPayments(driverId, {
       page: page ? Number(page) : 1,

@@ -6,7 +6,7 @@ import { Permission } from './permissions/entities/permission.entity';
 import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { Driver } from './drivers/entities/driver.entity';
 import { LatePayment } from './late-payments/entities/late-payment.entity';
-import { GpsLocation } from './monitoring/entities/gps-location.entity';
+import { GpsTracking } from './monitoring/entities/gps-tracking.entity';
 import { Setting } from './settings/entities/setting.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
 import { DriverKoin } from './koin/entities/driver-koin.entity';
@@ -21,7 +21,16 @@ const modulePermissions: Record<string, string[]> = {
   user: ['create', 'read', 'update', 'delete', 'activate', 'manage_role'],
   role: ['create', 'read', 'update', 'delete', 'assign_permissions'],
   permission: ['create', 'read', 'update', 'delete'],
-  driver: ['create', 'read.all', 'read.own', 'update.all', 'update.own', 'delete.all', 'delete.own', 'assign_vehicle'],
+  driver: [
+    'create',
+    'read.all',
+    'read.own',
+    'update.all',
+    'update.own',
+    'delete.all',
+    'delete.own',
+    'assign_vehicle',
+  ],
   vehicle: ['create', 'read', 'update', 'delete', 'change_status'],
   rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
   finance: ['create', 'read', 'update', 'delete', 'approve'],
@@ -51,70 +60,101 @@ interface RoleSeed {
 
 const rolesData: RoleSeed[] = [
   {
-    name: 'Administrator', code: 'ADMIN', description: 'Full system access',
+    name: 'Administrator',
+    code: 'ADMIN',
+    description: 'Full system access',
     permissionFilter: () => true,
   },
   {
-    name: 'Supervisor', code: 'SUPERVISOR', description: 'Supervisor - manage own drivers (max 10)',
+    name: 'Supervisor',
+    code: 'SUPERVISOR',
+    description: 'Supervisor - manage own drivers (max 10)',
     permissionFilter: (name) => {
       const perms = [
-        'driver.create', 'driver.read.own', 'driver.update.own', 'driver.delete.own', 'driver.assign_vehicle',
+        'driver.create',
+        'driver.read.own',
+        'driver.update.own',
+        'driver.delete.own',
+        'driver.assign_vehicle',
         'vehicle.read',
-        'rental.read', 'rental.create',
-        'koin.read', 'koin.top_up',
+        'rental.read',
+        'rental.create',
+        'koin.read',
+        'koin.top_up',
       ];
       return perms.includes(name);
     },
   },
   {
-    name: 'Finance', code: 'FINANCE', description: 'Finance department access',
+    name: 'Finance',
+    code: 'FINANCE',
+    description: 'Finance department access',
     permissionFilter: (name) => {
       const perms = [
-        'finance.create', 'finance.read', 'finance.update', 'finance.approve',
+        'finance.create',
+        'finance.read',
+        'finance.update',
+        'finance.approve',
         'rental.read',
       ];
       return perms.includes(name);
     },
   },
   {
-    name: 'Field Officer', code: 'FIELD_OFFICER', description: 'Field operations access',
-    permissionFilter: (name) => {
-      const perms = [
-        'driver.read.all', 'driver.assign_vehicle',
-        'vehicle.read',
-        'rental.read',
-        'monitoring.read', 'monitoring.read.all', 'monitoring.update',
-      ];
-      return perms.includes(name);
-    },
-  },
-  {
-    name: 'Driver', code: 'DRIVER', description: 'Driver - access payment and profile',
+    name: 'Field Officer',
+    code: 'FIELD_OFFICER',
+    description: 'Field operations access',
     permissionFilter: (name) => {
       const perms = [
         'driver.read.all',
-        'finance.read', 'finance.create',
-        'koin.read', 'koin.top_up',
-        'driver_portal.dashboard', 'driver_portal.payment', 'driver_portal.profile',
+        'driver.assign_vehicle',
+        'vehicle.read',
+        'rental.read',
+        'monitoring.read',
+        'monitoring.read.all',
+        'monitoring.update',
       ];
       return perms.includes(name);
     },
   },
   {
-    name: 'Owner', code: 'OWNER', description: 'Business owner - read-only reports',
+    name: 'Driver',
+    code: 'DRIVER',
+    description: 'Driver - access payment and profile',
     permissionFilter: (name) => {
       const perms = [
-        'driver.read.all', 'vehicle.read', 'rental.read', 'finance.read',
+        'driver.read.all',
+        'finance.read',
+        'finance.create',
+        'koin.read',
+        'koin.top_up',
+        'driver_portal.dashboard',
+        'driver_portal.payment',
+        'driver_portal.profile',
       ];
       return perms.includes(name);
     },
   },
   {
-    name: 'Operator', code: 'OPERATOR', description: 'System operator - basic read access',
+    name: 'Owner',
+    code: 'OWNER',
+    description: 'Business owner - read-only reports',
     permissionFilter: (name) => {
       const perms = [
-        'driver.read.all', 'vehicle.read', 'rental.read',
+        'driver.read.all',
+        'vehicle.read',
+        'rental.read',
+        'finance.read',
       ];
+      return perms.includes(name);
+    },
+  },
+  {
+    name: 'Operator',
+    code: 'OPERATOR',
+    description: 'System operator - basic read access',
+    permissionFilter: (name) => {
+      const perms = ['driver.read.all', 'vehicle.read', 'rental.read'];
       return perms.includes(name);
     },
   },
@@ -123,23 +163,29 @@ const rolesData: RoleSeed[] = [
 // ─── Vehicles ─────────────────────────────────────────────────
 const vehiclesData = [
   {
-    merk: 'Toyota', model: 'Avanza',
+    merk: 'Toyota',
+    model: 'Avanza',
     launching_year: new Date('2022-01-15'),
     license_plate: 'B 1234 ABC',
     vin_number: 'MHFX1234567890123',
-    color: 'Silver', status: 'rented',
+    color: 'Silver',
+    status: 'rented',
     engine_number: 'EN-TOYOTA-001',
     engine_status: 'on',
     daily_rate: 350000,
     pricing_category: 'Reguler',
     vendor_name: 'CV Armada Jaya',
+    imei: '123456789012345',
+    device_name: 'GPS Tracker 001',
   },
   {
-    merk: 'Honda', model: 'Brio',
+    merk: 'Honda',
+    model: 'Brio',
     launching_year: new Date('2023-03-20'),
     license_plate: 'B 5678 DEF',
     vin_number: 'MHFX9876543210987',
-    color: 'Red', status: 'rented',
+    color: 'Red',
+    status: 'rented',
     engine_number: 'EN-HONDA-001',
     engine_status: 'off',
     daily_rate: 300000,
@@ -147,11 +193,13 @@ const vehiclesData = [
     vendor_name: 'CV Armada Jaya',
   },
   {
-    merk: 'Toyota', model: 'Innova',
+    merk: 'Toyota',
+    model: 'Innova',
     launching_year: new Date('2021-06-10'),
     license_plate: 'B 9012 GHI',
     vin_number: 'MHFX4567890123456',
-    color: 'Black', status: 'Available',
+    color: 'Black',
+    status: 'Available',
     engine_number: 'EN-TOYOTA-002',
     engine_status: 'off',
     daily_rate: 500000,
@@ -159,11 +207,13 @@ const vehiclesData = [
     vendor_name: 'CV Armada Jaya',
   },
   {
-    merk: 'Daihatsu', model: 'Xenia',
+    merk: 'Daihatsu',
+    model: 'Xenia',
     launching_year: new Date('2023-08-05'),
     license_plate: 'B 3456 JKL',
     vin_number: 'MHFX1122334455667',
-    color: 'White', status: 'rented',
+    color: 'White',
+    status: 'rented',
     engine_number: 'EN-DAIHATSU-001',
     engine_status: 'on',
     daily_rate: 280000,
@@ -171,11 +221,13 @@ const vehiclesData = [
     vendor_name: 'PT Sejahtera Rent',
   },
   {
-    merk: 'Mitsubishi', model: 'Xpander',
+    merk: 'Mitsubishi',
+    model: 'Xpander',
     launching_year: new Date('2023-05-15'),
     license_plate: 'B 2345 PQR',
     vin_number: 'MHFX3344556677889',
-    color: 'Grey', status: 'Available',
+    color: 'Grey',
+    status: 'Available',
     engine_number: 'EN-MITSUBISHI-001',
     engine_status: 'off',
     daily_rate: 400000,
@@ -187,101 +239,196 @@ const vehiclesData = [
 // ─── Drivers ──────────────────────────────────────────────────
 const driversData = [
   {
-    first_name: 'Budi', last_name: 'Santoso',
+    first_name: 'Budi',
+    last_name: 'Santoso',
     date_of_birth: new Date('1990-05-15'),
-    gender: 'Male', employee_id: 'DRV-001',
-    phone: '081234567890', email: 'budi.santoso@example.com',
-    emergency_contact: '081234567891', emergency_email: 'emergency.budi@example.com',
-    house_type: 'Owned', permanent_address: 'Jl. Sudirman No. 10, Jakarta Selatan',
+    gender: 'Male',
+    employee_id: 'DRV-001',
+    phone: '081234567890',
+    email: 'budi.santoso@example.com',
+    emergency_contact: '081234567891',
+    emergency_email: 'emergency.budi@example.com',
+    house_type: 'Owned',
+    permanent_address: 'Jl. Sudirman No. 10, Jakarta Selatan',
     citizenship: 'Indonesian (WNI)',
-    province: '31', province_name: 'DKI Jakarta',
-    city: '3171', city_name: 'Kota Jakarta Selatan',
-    district: '3171060', district_name: 'Kebayoran Baru',
-    subdistrict: '3171060001', subdistrict_name: 'Gandaria Utara',
-    ready_sign_contract: true, willing_to_be_survey: true,
+    province: '31',
+    province_name: 'DKI Jakarta',
+    city: '3171',
+    city_name: 'Kota Jakarta Selatan',
+    district: '3171060',
+    district_name: 'Kebayoran Baru',
+    subdistrict: '3171060001',
+    subdistrict_name: 'Gandaria Utara',
+    ready_sign_contract: true,
+    willing_to_be_survey: true,
   },
   {
-    first_name: 'Andi', last_name: 'Pratama',
+    first_name: 'Andi',
+    last_name: 'Pratama',
     date_of_birth: new Date('1988-08-22'),
-    gender: 'Male', employee_id: 'DRV-002',
-    phone: '081234567892', email: 'andi.pratama@example.com',
-    emergency_contact: '081234567893', emergency_email: 'emergency.andi@example.com',
-    house_type: 'Rented', permanent_address: 'Jl. Gatot Subroto No. 25, Jakarta Pusat',
+    gender: 'Male',
+    employee_id: 'DRV-002',
+    phone: '081234567892',
+    email: 'andi.pratama@example.com',
+    emergency_contact: '081234567893',
+    emergency_email: 'emergency.andi@example.com',
+    house_type: 'Rented',
+    permanent_address: 'Jl. Gatot Subroto No. 25, Jakarta Pusat',
     citizenship: 'Indonesian (WNI)',
-    province: '31', province_name: 'DKI Jakarta',
-    city: '3173', city_name: 'Kota Jakarta Pusat',
-    district: '3173020', district_name: 'Menteng',
-    subdistrict: '3173020004', subdistrict_name: 'Gondangdia',
-    ready_sign_contract: true, willing_to_be_survey: true,
+    province: '31',
+    province_name: 'DKI Jakarta',
+    city: '3173',
+    city_name: 'Kota Jakarta Pusat',
+    district: '3173020',
+    district_name: 'Menteng',
+    subdistrict: '3173020004',
+    subdistrict_name: 'Gondangdia',
+    ready_sign_contract: true,
+    willing_to_be_survey: true,
   },
   {
-    first_name: 'Siti', last_name: 'Rahayu',
+    first_name: 'Siti',
+    last_name: 'Rahayu',
     date_of_birth: new Date('1995-02-10'),
-    gender: 'Female', employee_id: 'DRV-003',
-    phone: '081234567894', email: 'siti.rahayu@example.com',
-    emergency_contact: '081234567895', emergency_email: 'emergency.siti@example.com',
-    house_type: 'Owned', permanent_address: 'Jl. Thamrin No. 30, Jakarta Pusat',
+    gender: 'Female',
+    employee_id: 'DRV-003',
+    phone: '081234567894',
+    email: 'siti.rahayu@example.com',
+    emergency_contact: '081234567895',
+    emergency_email: 'emergency.siti@example.com',
+    house_type: 'Owned',
+    permanent_address: 'Jl. Thamrin No. 30, Jakarta Pusat',
     citizenship: 'Indonesian (WNI)',
-    province: '31', province_name: 'DKI Jakarta',
-    city: '3173', city_name: 'Kota Jakarta Pusat',
-    district: '3173030', district_name: 'Senen',
-    subdistrict: '3173030003', subdistrict_name: 'Kramat',
-    ready_sign_contract: true, willing_to_be_survey: true,
+    province: '31',
+    province_name: 'DKI Jakarta',
+    city: '3173',
+    city_name: 'Kota Jakarta Pusat',
+    district: '3173030',
+    district_name: 'Senen',
+    subdistrict: '3173030003',
+    subdistrict_name: 'Kramat',
+    ready_sign_contract: true,
+    willing_to_be_survey: true,
   },
   {
-    first_name: 'Dedi', last_name: 'Kurniawan',
+    first_name: 'Dedi',
+    last_name: 'Kurniawan',
     date_of_birth: new Date('1992-11-30'),
-    gender: 'Male', employee_id: 'DRV-004',
-    phone: '081234567896', email: 'dedi.kurniawan@example.com',
-    emergency_contact: '081234567897', emergency_email: 'emergency.dedi@example.com',
-    house_type: 'Rented', permanent_address: 'Jl. Kuningan No. 15, Jakarta Selatan',
+    gender: 'Male',
+    employee_id: 'DRV-004',
+    phone: '081234567896',
+    email: 'dedi.kurniawan@example.com',
+    emergency_contact: '081234567897',
+    emergency_email: 'emergency.dedi@example.com',
+    house_type: 'Rented',
+    permanent_address: 'Jl. Kuningan No. 15, Jakarta Selatan',
     citizenship: 'Indonesian (WNI)',
-    province: '31', province_name: 'DKI Jakarta',
-    city: '3171', city_name: 'Kota Jakarta Selatan',
-    district: '3171090', district_name: 'Tebet',
-    subdistrict: '3171090004', subdistrict_name: 'Kebon Baru',
-    ready_sign_contract: true, willing_to_be_survey: false,
+    province: '31',
+    province_name: 'DKI Jakarta',
+    city: '3171',
+    city_name: 'Kota Jakarta Selatan',
+    district: '3171090',
+    district_name: 'Tebet',
+    subdistrict: '3171090004',
+    subdistrict_name: 'Kebon Baru',
+    ready_sign_contract: true,
+    willing_to_be_survey: false,
   },
   {
-    first_name: 'Rina', last_name: 'Wulandari',
+    first_name: 'Rina',
+    last_name: 'Wulandari',
     date_of_birth: new Date('1993-07-18'),
-    gender: 'Female', employee_id: 'DRV-005',
-    phone: '081234567898', email: 'rina.wulandari@example.com',
-    emergency_contact: '081234567899', emergency_email: 'emergency.rina@example.com',
-    house_type: 'Owned', permanent_address: 'Jl. Kemang No. 8, Jakarta Selatan',
+    gender: 'Female',
+    employee_id: 'DRV-005',
+    phone: '081234567898',
+    email: 'rina.wulandari@example.com',
+    emergency_contact: '081234567899',
+    emergency_email: 'emergency.rina@example.com',
+    house_type: 'Owned',
+    permanent_address: 'Jl. Kemang No. 8, Jakarta Selatan',
     citizenship: 'Indonesian (WNI)',
-    province: '31', province_name: 'DKI Jakarta',
-    city: '3171', city_name: 'Kota Jakarta Selatan',
-    district: '3171060', district_name: 'Kebayoran Baru',
-    subdistrict: '3171060004', subdistrict_name: 'Petogogan',
-    ready_sign_contract: true, willing_to_be_survey: true,
+    province: '31',
+    province_name: 'DKI Jakarta',
+    city: '3171',
+    city_name: 'Kota Jakarta Selatan',
+    district: '3171060',
+    district_name: 'Kebayoran Baru',
+    subdistrict: '3171060004',
+    subdistrict_name: 'Petogogan',
+    ready_sign_contract: true,
+    willing_to_be_survey: true,
   },
 ];
 
 // ─── Settings ─────────────────────────────────────────────────
 const settingsData = [
-  { key: 'company_name', value: 'Mahkota Rental', category: 'general', description: 'Company name' },
-  { key: 'company_email', value: 'info@mahkotarental.com', category: 'general', description: 'Company contact email' },
-  { key: 'company_phone', value: '+62 21 5555 0123', category: 'general', description: 'Company phone number' },
-  { key: 'currency', value: 'IDR', category: 'finance', description: 'Default currency' },
-  { key: 'tax_rate', value: '11', category: 'finance', description: 'Tax rate percentage' },
+  {
+    key: 'company_name',
+    value: 'Mahkota Rental',
+    category: 'general',
+    description: 'Company name',
+  },
+  {
+    key: 'company_email',
+    value: 'info@mahkotarental.com',
+    category: 'general',
+    description: 'Company contact email',
+  },
+  {
+    key: 'company_phone',
+    value: '+62 21 5555 0123',
+    category: 'general',
+    description: 'Company phone number',
+  },
+  {
+    key: 'currency',
+    value: 'IDR',
+    category: 'finance',
+    description: 'Default currency',
+  },
+  {
+    key: 'tax_rate',
+    value: '11',
+    category: 'finance',
+    description: 'Tax rate percentage',
+  },
 ];
 
 async function seed() {
   const app = await NestFactory.createApplicationContext(AppModule);
 
   const roleRepository = app.get<Repository<Role>>(getRepositoryToken(Role));
-  const permissionRepository = app.get<Repository<Permission>>(getRepositoryToken(Permission));
+  const permissionRepository = app.get<Repository<Permission>>(
+    getRepositoryToken(Permission),
+  );
   const userRepository = app.get<Repository<User>>(getRepositoryToken(User));
-  const vehicleRepository = app.get<Repository<Vehicle>>(getRepositoryToken(Vehicle));
-  const driverRepository = app.get<Repository<Driver>>(getRepositoryToken(Driver));
-  const latePaymentRepository = app.get<Repository<LatePayment>>(getRepositoryToken(LatePayment));
-  const gpsRepository = app.get<Repository<GpsLocation>>(getRepositoryToken(GpsLocation));
-  const settingRepository = app.get<Repository<Setting>>(getRepositoryToken(Setting));
-  const auditRepository = app.get<Repository<AuditLog>>(getRepositoryToken(AuditLog));
-  const driverKoinRepository = app.get<Repository<DriverKoin>>(getRepositoryToken(DriverKoin));
-  const koinTransactionRepository = app.get<Repository<KoinTransaction>>(getRepositoryToken(KoinTransaction));
-  const vendorVehicleRepository = app.get<Repository<VendorVehicle>>(getRepositoryToken(VendorVehicle));
+  const vehicleRepository = app.get<Repository<Vehicle>>(
+    getRepositoryToken(Vehicle),
+  );
+  const driverRepository = app.get<Repository<Driver>>(
+    getRepositoryToken(Driver),
+  );
+  const latePaymentRepository = app.get<Repository<LatePayment>>(
+    getRepositoryToken(LatePayment),
+  );
+  const trackingRepository = app.get<Repository<GpsTracking>>(
+    getRepositoryToken(GpsTracking),
+  );
+  const settingRepository = app.get<Repository<Setting>>(
+    getRepositoryToken(Setting),
+  );
+  const auditRepository = app.get<Repository<AuditLog>>(
+    getRepositoryToken(AuditLog),
+  );
+  const driverKoinRepository = app.get<Repository<DriverKoin>>(
+    getRepositoryToken(DriverKoin),
+  );
+  const koinTransactionRepository = app.get<Repository<KoinTransaction>>(
+    getRepositoryToken(KoinTransaction),
+  );
+  const vendorVehicleRepository = app.get<Repository<VendorVehicle>>(
+    getRepositoryToken(VendorVehicle),
+  );
 
   // ═══════════════════════════════════════════════════════════
   // 1. SEED PERMISSIONS
@@ -294,7 +441,10 @@ async function seed() {
   for (const permName of allPermissionNames) {
     if (!existingNames.includes(permName)) {
       const [module] = permName.split('.');
-      const permission = permissionRepository.create({ name: permName, module });
+      const permission = permissionRepository.create({
+        name: permName,
+        module,
+      });
       newPermissions.push(permission);
     }
   }
@@ -319,7 +469,9 @@ async function seed() {
     });
 
     if (role) {
-      role.permissions = allPermissions.filter((p) => roleData.permissionFilter(p.name));
+      role.permissions = allPermissions.filter((p) =>
+        roleData.permissionFilter(p.name),
+      );
       await roleRepository.save(role);
       console.log(`  Updated role: ${roleData.code}`);
       continue;
@@ -341,7 +493,9 @@ async function seed() {
       throw err;
     }
 
-    role.permissions = allPermissions.filter((p) => roleData.permissionFilter(p.name));
+    role.permissions = allPermissions.filter((p) =>
+      roleData.permissionFilter(p.name),
+    );
     await roleRepository.save(role);
     console.log(`  Assigned permissions to ${roleData.code}`);
   }
@@ -351,13 +505,50 @@ async function seed() {
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Users ──');
   const usersData = [
-    { username: 'admin', email: 'admin@example.com', password: 'admin123', roleCode: 'ADMIN' },
-    { username: 'supervisor1', email: 'supervisor1@example.com', password: 'super123', roleCode: 'SUPERVISOR' },
-    { username: 'finance1', email: 'finance1@example.com', password: 'finance123', roleCode: 'FINANCE' },
-    { username: 'field1', email: 'field1@example.com', password: 'field123', roleCode: 'FIELD_OFFICER' },
-    { username: 'owner1', email: 'owner1@example.com', password: 'owner123', roleCode: 'OWNER' },
-    { username: 'driver1', email: 'driver1@example.com', password: 'driver123', roleCode: 'DRIVER', driverIndex: 0 },
-    { username: 'driver2', email: 'driver2@example.com', password: 'driver123', roleCode: 'DRIVER', driverIndex: 1 },
+    {
+      username: 'admin',
+      email: 'admin@example.com',
+      password: 'admin123',
+      roleCode: 'ADMIN',
+    },
+    {
+      username: 'supervisor1',
+      email: 'supervisor1@example.com',
+      password: 'super123',
+      roleCode: 'SUPERVISOR',
+    },
+    {
+      username: 'finance1',
+      email: 'finance1@example.com',
+      password: 'finance123',
+      roleCode: 'FINANCE',
+    },
+    {
+      username: 'field1',
+      email: 'field1@example.com',
+      password: 'field123',
+      roleCode: 'FIELD_OFFICER',
+    },
+    {
+      username: 'owner1',
+      email: 'owner1@example.com',
+      password: 'owner123',
+      roleCode: 'OWNER',
+    },
+    {
+      username: 'driver1',
+      email: 'driver1@example.com',
+      password: 'driver123',
+      roleCode: 'DRIVER',
+      driverIndex: 0,
+    },
+    {
+      username: 'driver2',
+      email: 'driver2@example.com',
+      password: 'driver123',
+      roleCode: 'DRIVER',
+      driverIndex: 1,
+    },
   ];
 
   const createdUsers: User[] = [];
@@ -370,13 +561,21 @@ async function seed() {
     if (existing) {
       console.log(`  User already exists: ${userData.username}`);
       createdUsers.push(existing);
-      if ('driverIndex' in userData && typeof (userData as any).driverIndex === 'number') {
-        driverUserMap.push({ userIndex: i, driverIndex: (userData as any).driverIndex });
+      if (
+        'driverIndex' in userData &&
+        typeof (userData as any).driverIndex === 'number'
+      ) {
+        driverUserMap.push({
+          userIndex: i,
+          driverIndex: (userData as any).driverIndex,
+        });
       }
       continue;
     }
 
-    const role = await roleRepository.findOne({ where: { code: userData.roleCode } });
+    const role = await roleRepository.findOne({
+      where: { code: userData.roleCode },
+    });
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const user = userRepository.create({
       username: userData.username,
@@ -387,8 +586,14 @@ async function seed() {
     });
     const saved = await userRepository.save(user);
     createdUsers.push(saved);
-    if ('driverIndex' in userData && typeof (userData as any).driverIndex === 'number') {
-      driverUserMap.push({ userIndex: i, driverIndex: (userData as any).driverIndex });
+    if (
+      'driverIndex' in userData &&
+      typeof (userData as any).driverIndex === 'number'
+    ) {
+      driverUserMap.push({
+        userIndex: i,
+        driverIndex: (userData as any).driverIndex,
+      });
     }
     console.log(`  Created user: ${userData.username} (${userData.roleCode})`);
   }
@@ -422,7 +627,9 @@ async function seed() {
 
   const createdVendors: VendorVehicle[] = [];
   for (const vData of vendorsData) {
-    let vendor = await vendorVehicleRepository.findOne({ where: { name: vData.name } });
+    let vendor = await vendorVehicleRepository.findOne({
+      where: { name: vData.name },
+    });
     if (vendor) {
       console.log(`  Vendor already exists: ${vData.name}`);
       createdVendors.push(vendor);
@@ -442,19 +649,28 @@ async function seed() {
       ? createdVendors.find((v) => v.name === vendor_name)?.id
       : undefined;
 
-    let vehicle = await vehicleRepository.findOne({ where: { license_plate: vData.license_plate } });
+    let vehicle = await vehicleRepository.findOne({
+      where: { license_plate: vData.license_plate },
+    });
     if (vehicle) {
       if (vehicle.vendor_id !== vendorId) {
         await vehicleRepository.update(vehicle.id, { vendor_id: vendorId });
-        console.log(`  Updated vehicle vendor_id: ${vData.license_plate} → ${vendor_name || '-'}`);
+        console.log(
+          `  Updated vehicle vendor_id: ${vData.license_plate} → ${vendor_name || '-'}`,
+        );
       }
       createdVehicles.push(vehicle);
       continue;
     }
-    vehicle = vehicleRepository.create({ ...vehicleFields, vendor_id: vendorId });
+    vehicle = vehicleRepository.create({
+      ...vehicleFields,
+      vendor_id: vendorId,
+    });
     vehicle = await vehicleRepository.save(vehicle);
     createdVehicles.push(vehicle);
-    console.log(`  Created vehicle: ${vData.license_plate} (${vData.merk} ${vData.model})`);
+    console.log(
+      `  Created vehicle: ${vData.license_plate} (${vData.merk} ${vData.model})`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -463,16 +679,23 @@ async function seed() {
   console.log('\n── Seeding Drivers ──');
   const createdDrivers: Driver[] = [];
   for (const dData of driversData) {
-    let driver = await driverRepository.findOne({ where: { employee_id: dData.employee_id } });
+    let driver = await driverRepository.findOne({
+      where: { employee_id: dData.employee_id },
+    });
     if (driver) {
       console.log(`  Driver already exists: ${dData.employee_id}`);
       createdDrivers.push(driver);
       continue;
     }
-    driver = driverRepository.create({ ...dData, created_by_id: adminUser?.id });
+    driver = driverRepository.create({
+      ...dData,
+      created_by_id: adminUser?.id,
+    });
     driver = await driverRepository.save(driver);
     createdDrivers.push(driver);
-    console.log(`  Created driver: ${dData.employee_id} (${dData.first_name} ${dData.last_name})`);
+    console.log(
+      `  Created driver: ${dData.employee_id} (${dData.first_name} ${dData.last_name})`,
+    );
   }
 
   // Link driver users to their driver records
@@ -482,7 +705,9 @@ async function seed() {
     const driver = createdDrivers[mapping.driverIndex];
     if (user && driver && !user.driver_id) {
       await userRepository.update(user.id, { driver_id: driver.id });
-      console.log(`  Linked user ${user.username} → driver ${driver.first_name} ${driver.last_name}`);
+      console.log(
+        `  Linked user ${user.username} → driver ${driver.first_name} ${driver.last_name}`,
+      );
     } else if (user?.driver_id) {
       console.log(`  User ${user.username} already linked to driver`);
     }
@@ -531,7 +756,9 @@ async function seed() {
       },
     });
     if (existing) {
-      console.log(`  Late payment already exists: ${existing.driver_name} Rp ${existing.amount.toLocaleString('id-ID')}`);
+      console.log(
+        `  Late payment already exists: ${existing.driver_name} Rp ${existing.amount.toLocaleString('id-ID')}`,
+      );
       continue;
     }
 
@@ -550,46 +777,68 @@ async function seed() {
       admin_note: (lpData as any).admin_note || undefined,
     });
     await latePaymentRepository.save(latePayment);
-    console.log(`  Created late payment: ${lpData.driver_name} Rp ${lpData.amount.toLocaleString('id-ID')} [${lpData.status}]`);
+    console.log(
+      `  Created late payment: ${lpData.driver_name} Rp ${lpData.amount.toLocaleString('id-ID')} [${lpData.status}]`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 7. SEED GPS LOCATIONS
+  // 7. SEED GPS TRACKING (1 data saja)
   // ═══════════════════════════════════════════════════════════
-  console.log('\n── Seeding GPS Locations ──');
+  console.log('\n── Seeding GPS Tracking ──');
+  const vehicle = createdVehicles[0];
   const gpsData = [
-    { vehicle: createdVehicles[0], latitude: -6.2088, longitude: 106.8456, speed: 45, fuel_level: 72, status: 'moving', engine_status: 'on' },
-    { vehicle: createdVehicles[1], latitude: -6.1750, longitude: 106.8270, speed: 0, fuel_level: 30, status: 'idle', engine_status: 'off' },
-    { vehicle: createdVehicles[2], latitude: -6.2297, longitude: 106.6891, speed: 60, fuel_level: 85, status: 'moving', engine_status: 'on' },
-    { vehicle: createdVehicles[3], latitude: -6.2615, longitude: 106.8100, speed: 0, fuel_level: 45, status: 'idle', engine_status: 'off' },
-    { vehicle: createdVehicles[4], latitude: -6.1944, longitude: 106.8329, speed: 35, fuel_level: 60, status: 'moving', engine_status: 'on' },
+    {
+      vehicle,
+      id_imei: vehicle.imei || `imei-${vehicle.id}`,
+      VehicleId: vehicle.id,
+      VehicleNumber: vehicle.license_plate,
+      DatetimeUTC: '2026-09-23 08:00:00',
+      GpsLocation: 'Jakarta Selatan',
+      Lon: '106.8456',
+      Lat: '-6.2088',
+      Speed: '45',
+      Direction: '90',
+      Engine: vehicle.engine_status || 'on',
+      Odometer: '12500',
+      Car_Status: 'moving',
+      VehicleType: 'rental',
+      Alarm: 'none',
+    },
   ];
 
-  for (const gData of gpsData) {
-    const existing = await gpsRepository.findOne({
-      where: { vehicle_id: gData.vehicle.id },
+  const gData = gpsData[0];
+  const existing = await trackingRepository.findOne({
+    where: { VehicleId: gData.VehicleId },
+  });
+  if (existing) {
+    console.log(`  GPS already exists: ${gData.VehicleNumber}`);
+  } else {
+    const gps = trackingRepository.create({
+      id_imei: gData.id_imei,
+      VehicleId: gData.VehicleId,
+      VehicleNumber: gData.VehicleNumber,
+      DatetimeUTC: gData.DatetimeUTC,
+      GpsLocation: gData.GpsLocation,
+      Lon: gData.Lon,
+      Lat: gData.Lat,
+      Speed: gData.Speed,
+      Direction: gData.Direction,
+      Engine: gData.Engine,
+      Odometer: gData.Odometer,
+      Car_Status: gData.Car_Status,
+      VehicleType: gData.VehicleType,
+      Alarm: gData.Alarm,
     });
-    if (existing) {
-      console.log(`  GPS already exists: ${gData.vehicle.merk} ${gData.vehicle.model}`);
-      continue;
-    }
+    await trackingRepository.save(gps);
 
-    const gps = gpsRepository.create({
-      vehicle_id: gData.vehicle.id,
-      latitude: gData.latitude,
-      longitude: gData.longitude,
-      speed: gData.speed,
-      fuel_level: gData.fuel_level,
-      status: gData.status,
-      engine_status: gData.engine_status,
-    });
-    await gpsRepository.save(gps);
-
-    await vehicleRepository.update(gData.vehicle.id, {
-      engine_status: gData.engine_status,
+    await vehicleRepository.update(gData.VehicleId, {
+      engine_status: gData.Engine,
     });
 
-    console.log(`  GPS: ${gData.vehicle.merk} ${gData.vehicle.model} @ ${gData.latitude}, ${gData.longitude} [${gData.status}] engine=${gData.engine_status}`);
+    console.log(
+      `  GPS: ${gData.VehicleNumber} @ ${gData.Lat}, ${gData.Lon} [${gData.Car_Status}] engine=${gData.Engine}`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -613,11 +862,46 @@ async function seed() {
     referenceId?: string;
     notes: string;
   }[] = [
-    { driver: createdDrivers[0], txType: 'top_up', amount: 5000000, balanceBefore: 0, balanceAfter: 5000000, notes: 'Initial balance seed' },
-    { driver: createdDrivers[1], txType: 'top_up', amount: 3000000, balanceBefore: 0, balanceAfter: 3000000, notes: 'Initial balance seed' },
-    { driver: createdDrivers[2], txType: 'top_up', amount: 7500000, balanceBefore: 0, balanceAfter: 7500000, notes: 'Initial balance seed' },
-    { driver: createdDrivers[3], txType: 'refund', amount: 500000, balanceBefore: 0, balanceAfter: 500000, notes: 'Refund koin' },
-    { driver: createdDrivers[4], txType: 'top_up', amount: 2000000, balanceBefore: 0, balanceAfter: 2000000, notes: 'Initial balance seed' },
+    {
+      driver: createdDrivers[0],
+      txType: 'top_up',
+      amount: 5000000,
+      balanceBefore: 0,
+      balanceAfter: 5000000,
+      notes: 'Initial balance seed',
+    },
+    {
+      driver: createdDrivers[1],
+      txType: 'top_up',
+      amount: 3000000,
+      balanceBefore: 0,
+      balanceAfter: 3000000,
+      notes: 'Initial balance seed',
+    },
+    {
+      driver: createdDrivers[2],
+      txType: 'top_up',
+      amount: 7500000,
+      balanceBefore: 0,
+      balanceAfter: 7500000,
+      notes: 'Initial balance seed',
+    },
+    {
+      driver: createdDrivers[3],
+      txType: 'refund',
+      amount: 500000,
+      balanceBefore: 0,
+      balanceAfter: 500000,
+      notes: 'Refund koin',
+    },
+    {
+      driver: createdDrivers[4],
+      txType: 'top_up',
+      amount: 2000000,
+      balanceBefore: 0,
+      balanceAfter: 2000000,
+      notes: 'Initial balance seed',
+    },
   ];
 
   for (const sData of koinData) {
@@ -625,7 +909,9 @@ async function seed() {
       where: { driver_id: sData.driver.id },
     });
     if (koin) {
-      console.log(`  Koin already exists for driver: ${sData.driver.first_name}, resetting balance`);
+      console.log(
+        `  Koin already exists for driver: ${sData.driver.first_name}, resetting balance`,
+      );
       koin.balance = sData.balance;
       await driverKoinRepository.save(koin);
     } else {
@@ -634,7 +920,9 @@ async function seed() {
         balance: sData.balance,
       });
       koin = await driverKoinRepository.save(koin);
-      console.log(`  Created koin: ${sData.driver.first_name} Rp ${sData.balance.toLocaleString('id-ID')}`);
+      console.log(
+        `  Created koin: ${sData.driver.first_name} Rp ${sData.balance.toLocaleString('id-ID')}`,
+      );
     }
   }
 
@@ -652,7 +940,9 @@ async function seed() {
       },
     });
     if (existingTx) {
-      console.log(`  Koin ${tx.txType} already exists: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')}`);
+      console.log(
+        `  Koin ${tx.txType} already exists: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')}`,
+      );
       continue;
     }
     const entry = koinTransactionRepository.create({
@@ -666,7 +956,9 @@ async function seed() {
       notes: tx.notes,
     });
     await koinTransactionRepository.save(entry);
-    console.log(`  Koin ${tx.txType}: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')} → koin ${tx.balanceAfter.toLocaleString('id-ID')}`);
+    console.log(
+      `  Koin ${tx.txType}: ${tx.driver.first_name} Rp ${tx.amount.toLocaleString('id-ID')} → koin ${tx.balanceAfter.toLocaleString('id-ID')}`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -674,7 +966,9 @@ async function seed() {
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Settings ──');
   for (const sData of settingsData) {
-    const existing = await settingRepository.findOne({ where: { key: sData.key } });
+    const existing = await settingRepository.findOne({
+      where: { key: sData.key },
+    });
     if (existing) {
       console.log(`  Setting already exists: ${sData.key}`);
       continue;
@@ -689,8 +983,20 @@ async function seed() {
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Audit Logs ──');
   const auditData = [
-    { username: 'admin', action: 'CREATE_DRIVER', target: 'driver/DRV-001', details: 'Created driver Budi Santoso', status: 'success' },
-    { username: 'admin', action: 'CREATE_VEHICLE', target: 'vehicle/B 1234 ABC', details: 'Created vehicle Toyota Avanza', status: 'success' },
+    {
+      username: 'admin',
+      action: 'CREATE_DRIVER',
+      target: 'driver/DRV-001',
+      details: 'Created driver Budi Santoso',
+      status: 'success',
+    },
+    {
+      username: 'admin',
+      action: 'CREATE_VEHICLE',
+      target: 'vehicle/B 1234 ABC',
+      details: 'Created vehicle Toyota Avanza',
+      status: 'success',
+    },
   ];
 
   let createdAuditLogs = 0;

@@ -38,15 +38,17 @@ export class RoleController {
     const meta = extractRequestMeta(req);
     const result = await this.roleService.create(dto);
     const role = result?.data || result;
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'CREATE_ROLE',
-      target: `role/${role?.id || ''}`,
-      details: `Created role ${dto.name}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_ROLE',
+        target: `role/${role?.id || ''}`,
+        details: `Created role ${dto.name}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -84,15 +86,17 @@ export class RoleController {
   ) {
     const meta = extractRequestMeta(req);
     const result = await this.roleService.update(id, dto);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'UPDATE_ROLE',
-      target: `role/${id}`,
-      details: `Updated role ${id}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'UPDATE_ROLE',
+        target: `role/${id}`,
+        details: `Updated role ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -101,15 +105,17 @@ export class RoleController {
   async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const meta = extractRequestMeta(req);
     const result = await this.roleService.delete(id);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'DELETE_ROLE',
-      target: `role/${id}`,
-      details: `Deleted role ${id}`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'DELETE_ROLE',
+        target: `role/${id}`,
+        details: `Deleted role ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -122,15 +128,17 @@ export class RoleController {
   ) {
     const meta = extractRequestMeta(req);
     const result = await this.roleService.assignPermissions(id, dto);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'ASSIGN_PERMISSIONS',
-      target: `role/${id}`,
-      details: `Assigned ${dto.permissionIds?.length || 0} permissions to role`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'ASSIGN_PERMISSIONS',
+        target: `role/${id}`,
+        details: `Assigned ${dto.permissionIds?.length || 0} permissions to role`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 
@@ -143,15 +151,17 @@ export class RoleController {
   ) {
     const meta = extractRequestMeta(req);
     const result = await this.roleService.removePermissions(id, dto);
-    this.auditService.create({
-      user_id: req.user?.id,
-      username: req.user?.username || 'system',
-      action: 'REMOVE_PERMISSIONS',
-      target: `role/${id}`,
-      details: `Removed ${dto.permissionIds?.length || 0} permissions from role`,
-      ...meta,
-      status: 'success',
-    }).catch(() => {});
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'REMOVE_PERMISSIONS',
+        target: `role/${id}`,
+        details: `Removed ${dto.permissionIds?.length || 0} permissions from role`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
     return result;
   }
 

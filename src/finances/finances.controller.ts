@@ -151,7 +151,11 @@ export class FinancesController {
       throw new BadRequestException('No driver profile linked to this account');
     }
     const meta = extractRequestMeta(req);
-    const result = await this.financesService.createPaymentForDriver(id, dto, driverId);
+    const result = await this.financesService.createPaymentForDriver(
+      id,
+      dto,
+      driverId,
+    );
     this.auditService
       .create({
         user_id: req.user?.id,

@@ -33,10 +33,9 @@ export class VendorVehicleService {
       .orderBy('v.created_at', 'DESC');
 
     if (query?.search) {
-      qb.where(
-        '(v.name ILIKE :search OR v.owner_name ILIKE :search)',
-        { search: `%${query.search}%` },
-      );
+      qb.where('(v.name ILIKE :search OR v.owner_name ILIKE :search)', {
+        search: `%${query.search}%`,
+      });
     }
 
     if (query?.status) {
@@ -70,7 +69,9 @@ export class VendorVehicleService {
     };
   }
 
-  private async getVehicleCounts(ids: string[]): Promise<Record<string, number>> {
+  private async getVehicleCounts(
+    ids: string[],
+  ): Promise<Record<string, number>> {
     if (ids.length === 0) {
       return {};
     }
@@ -370,15 +371,21 @@ export class VendorVehicleService {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
       ? query.columns.split(',')
-      : ['name', 'ownerName', 'pendapatan', 'totalKendaraan', 'status', 'createdAt'];
+      : [
+          'name',
+          'ownerName',
+          'pendapatan',
+          'totalKendaraan',
+          'status',
+          'createdAt',
+        ];
 
     const qb = this.vendorRepository.createQueryBuilder('v');
 
     if (query.search) {
-      qb.where(
-        '(v.name ILIKE :search OR v.owner_name ILIKE :search)',
-        { search: `%${query.search}%` },
-      );
+      qb.where('(v.name ILIKE :search OR v.owner_name ILIKE :search)', {
+        search: `%${query.search}%`,
+      });
     }
 
     if (query.status) {
@@ -386,11 +393,15 @@ export class VendorVehicleService {
     }
 
     if (query.start_date) {
-      qb.andWhere('v.created_at >= :start', { start: query.start_date + ' 00:00:00' });
+      qb.andWhere('v.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
     }
 
     if (query.end_date) {
-      qb.andWhere('v.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
+      qb.andWhere('v.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
     }
 
     const vendors = await qb.orderBy('v.created_at', 'DESC').getMany();
@@ -485,7 +496,7 @@ export class VendorVehicleService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -507,7 +518,10 @@ export class VendorVehicleService {
     const tableBody: any[][] = [];
 
     tableBody.push(
-      columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })),
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
     );
 
     for (const row of rows) {

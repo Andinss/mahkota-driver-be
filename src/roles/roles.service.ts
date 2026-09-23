@@ -41,7 +41,11 @@ export class RoleService {
       relations: { permissions: true },
     });
     if (!role) throw new NotFoundException('Role not found');
-    return { success: true, message: 'Role retrieved successfully', data: role };
+    return {
+      success: true,
+      message: 'Role retrieved successfully',
+      data: role,
+    };
   }
 
   async create(dto: CreateRoleDto) {
@@ -209,9 +213,7 @@ export class RoleService {
       const actions = perms
         .filter(
           (p) =>
-            p.module === mod ||
-            p.name === mod ||
-            p.name.startsWith(`${mod}.`),
+            p.module === mod || p.name === mod || p.name.startsWith(`${mod}.`),
         )
         .map((p) => {
           const parts = p.name.split('.');
@@ -226,7 +228,8 @@ export class RoleService {
       description: (r) => r.description || '-',
       is_active: (r) => (r.is_active ? 'Active' : 'Inactive'),
       id: (r) => r.id || '-',
-      created_at: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('id-ID') : '-',
+      created_at: (r) =>
+        r.created_at ? new Date(r.created_at).toLocaleDateString('id-ID') : '-',
     };
     for (const mod of moduleKeys) {
       columnMap[mod] = (r) => getModuleActions(r, mod);
@@ -252,33 +255,75 @@ export class RoleService {
     });
 
     if (format === 'csv') {
-      const header = activeColumns.map((col) => ({ id: col, title: headerLabels[col] || col }));
+      const header = activeColumns.map((col) => ({
+        id: col,
+        title: headerLabels[col] || col,
+      }));
       const csvStringifier = createObjectCsvStringifier({ header });
-      const csv = csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
-      return { buffer: Buffer.from(csv, 'utf-8'), contentType: 'text/csv', filename: `roles_export_${Date.now()}.csv` };
+      const csv =
+        csvStringifier.getHeaderString() +
+        csvStringifier.stringifyRecords(rows);
+      return {
+        buffer: Buffer.from(csv, 'utf-8'),
+        contentType: 'text/csv',
+        filename: `roles_export_${Date.now()}.csv`,
+      };
     } else if (format === 'xlsx') {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Roles');
-      worksheet.columns = activeColumns.map((col) => ({ header: headerLabels[col] || col, key: col, width: 25 }));
+      worksheet.columns = activeColumns.map((col) => ({
+        header: headerLabels[col] || col,
+        key: col,
+        width: 25,
+      }));
       for (const row of rows) worksheet.addRow(row);
       worksheet.getRow(1).font = { bold: true };
       const writeResult = await workbook.xlsx.writeBuffer();
-      return { buffer: Buffer.from(writeResult as ArrayBuffer), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `roles_export_${Date.now()}.xlsx` };
+      return {
+        buffer: Buffer.from(writeResult),
+        contentType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: `roles_export_${Date.now()}.xlsx`,
+      };
     } else {
       const PdfPrinter = require('pdfmake');
       const roboto = require('pdfmake/fonts/Roboto');
       PdfPrinter.addFonts(roboto);
       const tableBody: any[][] = [];
-      tableBody.push(activeColumns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
-      for (const row of rows) tableBody.push(activeColumns.map((col) => row[col] || ''));
+      tableBody.push(
+        activeColumns.map((col) => ({
+          text: headerLabels[col] || col,
+          style: 'tableHeader',
+        })),
+      );
+      for (const row of rows)
+        tableBody.push(activeColumns.map((col) => row[col] || ''));
       const docDefinition: any = {
-        content: [{ text: 'Role Export Report', style: 'header' }, { table: { headerRows: 1, widths: activeColumns.map(() => '*'), body: tableBody }, layout: 'headerLineOnly' }],
-        styles: { header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] }, tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' }, defaultStyle: { fontSize: 9 } },
+        content: [
+          { text: 'Role Export Report', style: 'header' },
+          {
+            table: {
+              headerRows: 1,
+              widths: activeColumns.map(() => '*'),
+              body: tableBody,
+            },
+            layout: 'headerLineOnly',
+          },
+        ],
+        styles: {
+          header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+          tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+          defaultStyle: { fontSize: 9 },
+        },
         pageOrientation: 'landscape',
       };
       const pdfDoc = PdfPrinter.createPdf(docDefinition);
       const buffer = await pdfDoc.getBuffer();
-      return { buffer, contentType: 'application/pdf', filename: `roles_export_${Date.now()}.pdf` };
+      return {
+        buffer,
+        contentType: 'application/pdf',
+        filename: `roles_export_${Date.now()}.pdf`,
+      };
     }
   }
 }

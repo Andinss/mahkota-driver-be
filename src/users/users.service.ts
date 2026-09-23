@@ -26,7 +26,9 @@ export class UsersService {
 
   async getSummary() {
     const totalUsers = await this.usersRepository.count();
-    const activeUsers = await this.usersRepository.count({ where: { is_active: true } });
+    const activeUsers = await this.usersRepository.count({
+      where: { is_active: true },
+    });
 
     return {
       success: true,
@@ -65,10 +67,7 @@ export class UsersService {
       );
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -152,7 +151,8 @@ export class UsersService {
 
       return {
         success: true,
-        message: 'User created successfully, please check email to set password',
+        message:
+          'User created successfully, please check email to set password',
         data: { ...result, set_password_token: token },
       };
     } catch (error) {
@@ -286,7 +286,7 @@ export class UsersService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -308,7 +308,10 @@ export class UsersService {
     const tableBody: any[][] = [];
 
     tableBody.push(
-      columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })),
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
     );
 
     for (const row of rows) {

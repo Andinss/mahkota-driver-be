@@ -66,8 +66,9 @@ export class VehiclesController {
 
   @Get('sync-gpsid')
   @Permissions('vehicle.read')
-  async syncFromGpsid() {
-    return this.vehicleService.fetchVehiclesFromGpsid();
+  async syncFromGpsid(@Query('refresh') refresh?: string) {
+    const forceRefresh = refresh === '1' || refresh === 'true';
+    return this.vehicleService.fetchVehiclesFromGpsid(forceRefresh);
   }
 
   @Get(':id')

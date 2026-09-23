@@ -16,7 +16,7 @@ import { join } from 'path';
           auth: {
             user: config.get<string>('SMTP_USER'),
             pass: config.get<string>('SMTP_PASS'),
-          },  
+          },
         },
         defaults: {
           from: `"${config.get<string>('FROM_EMAIL_NAME')}" <${config.get<string>('FROM_EMAIL')}>`,

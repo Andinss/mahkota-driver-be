@@ -19,7 +19,14 @@ export class VehicleQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsEnum(['Available', 'Maintenance', 'Service', 'Reserved', 'rented', 'retrieved'])
+  @IsEnum([
+    'Available',
+    'Maintenance',
+    'Service',
+    'Reserved',
+    'rented',
+    'retrieved',
+  ])
   status?: string;
 
   @IsOptional()

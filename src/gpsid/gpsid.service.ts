@@ -59,6 +59,16 @@ export class GpsidService implements OnModuleInit {
   private readonly logger = new Logger(GpsidService.name);
   private token: string | null = null;
 
+  // Rate limit GPSID /vehicle: 5 attempts / 5 minutes
+  private static readonly VEHICLE_CACHE_TTL_MS = 4 * 60 * 1000; // 4 menit
+  private vehicleCache: {
+    data: GpsidVehicleResponse;
+    expiresAt: number;
+  } | null = null;
+  private vehicleInflight: Promise<GpsidVehicleResponse> | null = null;
+  private lastVehicleFetchAt = 0;
+  private static readonly VEHICLE_MIN_INTERVAL_MS = 30 * 1000; // min 30 dtk antar fetch asli
+
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
@@ -66,7 +76,10 @@ export class GpsidService implements OnModuleInit {
       await this.refreshToken();
       this.logger.log('GPSID token fetched on startup');
     } catch (error) {
-      this.logger.error('Failed to fetch GPSID token on startup', error.message);
+      this.logger.error(
+        'Failed to fetch GPSID token on startup',
+        error.message,
+      );
     }
   }
 
@@ -110,7 +123,9 @@ export class GpsidService implements OnModuleInit {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`GPSID login failed: ${response.status} ${response.statusText} - ${text}`);
+      throw new Error(
+        `GPSID login failed: ${response.status} ${response.statusText} - ${text}`,
+      );
     }
 
     const data: GpsidLoginResponse = await response.json();
@@ -121,15 +136,62 @@ export class GpsidService implements OnModuleInit {
 
     this.token = data.message.data.token;
 
-    this.logger.log(`GPSID token refreshed for user: ${data.message.data.username}`);
+    this.logger.log(
+      `GPSID token refreshed for user: ${data.message.data.username}`,
+    );
 
     return this.token;
   }
 
-  async fetchVehicles(): Promise<GpsidVehicleResponse> {
+  async fetchVehicles(options?: {
+    forceRefresh?: boolean;
+  }): Promise<GpsidVehicleResponse> {
+    const now = Date.now();
+    const force = options?.forceRefresh === true;
+
+    // 1. Serve dari cache jika masih valid
+    if (!force && this.vehicleCache && this.vehicleCache.expiresAt > now) {
+      this.logger.debug('Serving GPSID vehicles from cache');
+      return this.vehicleCache.data;
+    }
+
+    // 2. Single-flight: jika ada request sedang berjalan, pinjam promise-nya
+    if (this.vehicleInflight) {
+      return this.vehicleInflight;
+    }
+
+    // 3. Throttle: jangan tembak API lebih sering dari interval minimum
+    if (
+      !force &&
+      this.lastVehicleFetchAt > 0 &&
+      now - this.lastVehicleFetchAt < GpsidService.VEHICLE_MIN_INTERVAL_MS
+    ) {
+      if (this.vehicleCache) {
+        this.logger.warn('GPSID vehicle fetch throttled, serving stale cache');
+        return this.vehicleCache.data;
+      }
+    }
+
+    this.vehicleInflight = this.doFetchVehicles()
+      .then((data) => {
+        this.vehicleCache = {
+          data,
+          expiresAt: Date.now() + GpsidService.VEHICLE_CACHE_TTL_MS,
+        };
+        return data;
+      })
+      .finally(() => {
+        this.vehicleInflight = null;
+      });
+
+    return this.vehicleInflight;
+  }
+
+  private async doFetchVehicles(): Promise<GpsidVehicleResponse> {
     const token = await this.getToken();
     const url = 'https://portal.gps.id/backend/seen/public/vehicle';
 
+    this.lastVehicleFetchAt = Date.now();
     this.logger.log('Fetching vehicles from GPSID...');
 
     const response = await fetch(url, {
@@ -142,12 +204,29 @@ export class GpsidService implements OnModuleInit {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`GPSID vehicle fetch failed: ${response.status} ${response.statusText} - ${text}`);
+
+      // Rate limited / server error → fallback ke cache lama bila ada
+      if (this.vehicleCache) {
+        this.logger.warn(
+          `GPSID vehicle fetch failed (${response.status}), serving stale cache: ${text}`,
+        );
+        return this.vehicleCache.data;
+      }
+
+      throw new Error(
+        `GPSID vehicle fetch failed: ${response.status} ${response.statusText} - ${text}`,
+      );
     }
 
     const data: GpsidVehicleResponse = await response.json();
     this.logger.log(`Fetched ${data.message?.total ?? 0} vehicles from GPSID`);
 
     return data;
+  }
+
+  /** Bust cache (mis. setelah data GPSID diubah dari sisi lain). */
+  invalidateVehicleCache() {
+    this.vehicleCache = null;
+    this.lastVehicleFetchAt = 0;
   }
 }

@@ -32,7 +32,7 @@ export class DriverService {
     const qb = this.driversRepository
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
-.leftJoinAndSelect('d.koin', 'koin')
+      .leftJoinAndSelect('d.koin', 'koin')
       .leftJoinAndSelect('d.rentals', 'rentals')
       .leftJoinAndSelect('rentals.vehicle', 'vehicle')
       .orderBy('d.created_at', 'DESC');
@@ -44,10 +44,7 @@ export class DriverService {
       );
     }
 
-    const [data, total] = await qb
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -100,8 +97,12 @@ export class DriverService {
 
   async getSummary() {
     const totalDrivers = await this.driversRepository.count();
-    const activeDrivers = await this.driversRepository.count({ where: { is_active: true } });
-    const inactiveDrivers = await this.driversRepository.count({ where: { is_active: false } });
+    const activeDrivers = await this.driversRepository.count({
+      where: { is_active: true },
+    });
+    const inactiveDrivers = await this.driversRepository.count({
+      where: { is_active: false },
+    });
 
     const genderBreakdown = await this.driversRepository
       .createQueryBuilder('d')
@@ -128,14 +129,22 @@ export class DriverService {
   }
 
   async findByEmployeeId(employeeId: string): Promise<Driver | null> {
-    let driver = await this.driversRepository.findOne({ where: { employee_id: employeeId } });
+    let driver = await this.driversRepository.findOne({
+      where: { employee_id: employeeId },
+    });
     if (!driver && /^[0-9a-f-]{36}$/i.test(employeeId)) {
-      driver = await this.driversRepository.findOne({ where: { id: employeeId } });
+      driver = await this.driversRepository.findOne({
+        where: { id: employeeId },
+      });
     }
     return driver;
   }
 
-  async create(data: AddDriverDto, userId: string, files?: Express.Multer.File[]) {
+  async create(
+    data: AddDriverDto,
+    userId: string,
+    files?: Express.Multer.File[],
+  ) {
     try {
       if (files && files.length > 0) {
         for (const file of files) {
@@ -256,7 +265,10 @@ export class DriverService {
       }
 
       const { created_by_id, ...safeData } = data as any;
-      const result = await this.driversRepository.update(existingDriver.id, safeData);
+      const result = await this.driversRepository.update(
+        existingDriver.id,
+        safeData,
+      );
 
       if (result.affected === 0) {
         throw new NotFoundException('Driver not found');
@@ -317,7 +329,9 @@ export class DriverService {
     };
   }
 
-  async delete(employeeId: string): Promise<{ success: boolean; message: string }> {
+  async delete(
+    employeeId: string,
+  ): Promise<{ success: boolean; message: string }> {
     let existingDriver = await this.driversRepository.findOne({
       where: { employee_id: employeeId },
     });
@@ -343,7 +357,9 @@ export class DriverService {
     for (const filePath of fileFields) {
       if (filePath) {
         try {
-          const fullPath = filePath.startsWith('/') ? filePath : `./${filePath}`;
+          const fullPath = filePath.startsWith('/')
+            ? filePath
+            : `./${filePath}`;
           if (existsSync(fullPath)) {
             unlinkSync(fullPath);
           }
@@ -367,7 +383,8 @@ export class DriverService {
       ? query.columns.split(',')
       : ['name', 'employee_id', 'phone', 'email', 'koin'];
 
-    const qb = this.driversRepository.createQueryBuilder('d')
+    const qb = this.driversRepository
+      .createQueryBuilder('d')
       .leftJoinAndSelect('d.koin', 'koin');
 
     if (query.search) {
@@ -378,11 +395,15 @@ export class DriverService {
     }
 
     if (query.start_date) {
-      qb.andWhere('d.created_at >= :start', { start: query.start_date + ' 00:00:00' });
+      qb.andWhere('d.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
     }
 
     if (query.end_date) {
-      qb.andWhere('d.created_at <= :end', { end: query.end_date + ' 23:59:59.999' });
+      qb.andWhere('d.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
     }
 
     const drivers = await qb.orderBy('d.created_at', 'DESC').getMany();
@@ -396,7 +417,10 @@ export class DriverService {
       email: (d) => d.email || '-',
       koin: (d) => String(d.koin?.balance || 0),
       gender: (d) => d.gender || '-',
-      date_of_birth: (d) => d.date_of_birth ? new Date(d.date_of_birth).toLocaleDateString('id-ID') : '-',
+      date_of_birth: (d) =>
+        d.date_of_birth
+          ? new Date(d.date_of_birth).toLocaleDateString('id-ID')
+          : '-',
       citizenship: (d) => d.citizenship || '-',
       house_type: (d) => d.house_type || '-',
       province_name: (d) => d.province_name || '-',
@@ -487,7 +511,7 @@ export class DriverService {
     worksheet.getRow(1).font = { bold: true };
 
     const writeResult = await workbook.xlsx.writeBuffer();
-    const buffer = Buffer.from(writeResult as ArrayBuffer);
+    const buffer = Buffer.from(writeResult);
 
     return {
       buffer,
@@ -508,7 +532,12 @@ export class DriverService {
 
     const tableBody: any[][] = [];
 
-    tableBody.push(columns.map((col) => ({ text: headerLabels[col] || col, style: 'tableHeader' })));
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
 
     for (const row of rows) {
       tableBody.push(columns.map((col) => row[col] || ''));

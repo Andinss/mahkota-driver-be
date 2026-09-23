@@ -22,6 +22,7 @@ import { LatePaymentsModule } from './late-payments/late-payments.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { NotificationModule } from './notification/notification.module';
 import { KoinModule } from './koin/koin.module';
 import { GpsidModule } from './gpsid/gpsid.module';
 import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
@@ -36,10 +37,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 
     ScheduleModule.forRoot(),
 
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 30,
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 30,
+      },
+    ]),
 
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -67,15 +70,20 @@ import { ScheduleModule } from '@nestjs/schedule';
     SettingsModule,
     AuditModule,
     MonitoringModule,
+    NotificationModule,
     KoinModule,
     VendorVehicleModule,
     GpsidModule,
     DailyPaymentsModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
-  providers: [AppService, VehicleAssignmentService, {
-    provide: APP_GUARD,
-    useClass: ThrottlerGuard,
-  }],
+  providers: [
+    AppService,
+    VehicleAssignmentService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
