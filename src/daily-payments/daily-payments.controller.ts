@@ -27,11 +27,13 @@ export class DailyPaymentsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('status') status?: string,
   ) {
     return this.dailyPaymentsService.getDailyPayments({
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50,
       search,
+      status,
     });
   }
 
