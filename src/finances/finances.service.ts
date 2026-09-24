@@ -35,6 +35,7 @@ interface PaymentTotals {
   paid: number;
   pending: number;
   count: number;
+  paidAt?: Date | null;
 }
 
 @Injectable()
@@ -193,9 +194,19 @@ export class FinancesService {
     const vehicle = firstRental?.vehicle ?? fallback?.vehicle;
     const vendor = vehicle?.vendor ?? fallback?.vendor;
 
+    const paidPayments = (finance.payments || [])
+      .filter((p) => p.status === 'paid')
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    const lastPaidAt =
+      t.paidAt ?? paidPayments[paidPayments.length - 1]?.created_at;
+
     return {
       id: finance.id,
       payment_date: finance.payment_date,
+      paid_at: lastPaidAt ?? undefined,
       reference_number: finance.reference_number,
       payment_method: finance.payment_method,
       amount_received: paidAmount,
@@ -264,6 +275,10 @@ export class FinancesService {
         'pending',
       )
       .addSelect('COUNT(p.id)', 'count')
+      .addSelect(
+        `MAX(CASE WHEN p.status = 'paid' THEN p.created_at END)`,
+        'paid_at',
+      )
       .leftJoin('f.payments', 'p')
       .where('f.id IN (:...ids)', { ids })
       .groupBy('p.finance_id')
@@ -274,6 +289,7 @@ export class FinancesService {
         paid: Number(row.paid) || 0,
         pending: Number(row.pending) || 0,
         count: Number(row.count) || 0,
+        paidAt: row.paid_at ? new Date(row.paid_at) : null,
       };
     }
     return result;
