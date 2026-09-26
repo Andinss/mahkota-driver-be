@@ -104,6 +104,10 @@ export class AddDriverDto {
 
   @IsOptional()
   @IsString()
+  kartu_keluarga?: string;
+
+  @IsOptional()
+  @IsString()
   garage_photo?: string;
 
   @IsOptional()

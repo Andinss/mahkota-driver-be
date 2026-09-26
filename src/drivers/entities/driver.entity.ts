@@ -100,6 +100,9 @@ export class Driver {
   sim_card!: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
+  kartu_keluarga!: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
   garage_photo!: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })

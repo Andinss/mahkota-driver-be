@@ -107,6 +107,10 @@ export class UpdateDriverDto {
 
   @IsOptional()
   @IsString()
+  kartu_keluarga!: string;
+
+  @IsOptional()
+  @IsString()
   garage_photo!: string;
 
   @IsOptional()

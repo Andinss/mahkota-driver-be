@@ -26,7 +26,7 @@ export class MonitoringController {
     return this.monitoringService.findById(id);
   }
 
-  @Post()
+  @Post('create')
   // @UseGuards(JwtAuthGuard, PermissionGuard)
   // @Permissions('monitoring.update')
   create(@Body() dto: CreateGpsTrackingDto) {

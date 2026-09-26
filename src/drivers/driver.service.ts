@@ -14,6 +14,7 @@ import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
 import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
+import { resolveDriverFileField } from './utils/driver-file.util';
 
 @Injectable()
 export class DriverService {
@@ -148,23 +149,8 @@ export class DriverService {
     try {
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
-
-          if (originalName.includes('ktp')) {
-            data.national_id_card = filePath;
-          } else if (originalName.includes('sim')) {
-            data.sim_card = filePath;
-          } else if (
-            originalName.includes('foto') ||
-            originalName.includes('profil')
-          ) {
-            data.profile_photo = filePath;
-          } else if (originalName.includes('rumah')) {
-            data.garage_photo = filePath;
-          } else {
-            data.npwp_photo = filePath;
-          }
+          (data as any)[resolveDriverFileField(file.originalname)] = filePath;
         }
       }
 
@@ -225,29 +211,14 @@ export class DriverService {
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
+          const field = resolveDriverFileField(file.originalname);
           const filePath = file.path.replace(/\\/g, '/');
-          let oldFilePath: string | null | undefined = null;
+          const oldFilePath = (existingDriver as any)[field] as
+            | string
+            | null
+            | undefined;
 
-          if (originalName.includes('ktp')) {
-            oldFilePath = existingDriver.national_id_card;
-            data.national_id_card = filePath;
-          } else if (originalName.includes('sim')) {
-            oldFilePath = existingDriver.sim_card;
-            data.sim_card = filePath;
-          } else if (
-            originalName.includes('foto') ||
-            originalName.includes('profil')
-          ) {
-            oldFilePath = existingDriver.profile_photo;
-            data.profile_photo = filePath;
-          } else if (originalName.includes('rumah')) {
-            oldFilePath = existingDriver.garage_photo;
-            data.garage_photo = filePath;
-          } else {
-            oldFilePath = existingDriver.npwp_photo;
-            data.npwp_photo = filePath;
-          }
+          (data as any)[field] = filePath;
 
           if (oldFilePath && oldFilePath !== filePath) {
             try {
@@ -350,6 +321,7 @@ export class DriverService {
       existingDriver.profile_photo,
       existingDriver.national_id_card,
       existingDriver.sim_card,
+      existingDriver.kartu_keluarga,
       existingDriver.garage_photo,
       existingDriver.npwp_photo,
     ];
@@ -422,6 +394,7 @@ export class DriverService {
           ? new Date(d.date_of_birth).toLocaleDateString('id-ID')
           : '-',
       citizenship: (d) => d.citizenship || '-',
+      kartu_keluarga: (d) => d.kartu_keluarga || '-',
       house_type: (d) => d.house_type || '-',
       province_name: (d) => d.province_name || '-',
       city_name: (d) => d.city_name || '-',
@@ -441,6 +414,7 @@ export class DriverService {
       gender: 'Gender',
       date_of_birth: 'Date of Birth',
       citizenship: 'Citizenship',
+      kartu_keluarga: 'Kartu Keluarga',
       house_type: 'House Type',
       province_name: 'Province',
       city_name: 'City / Regency',
