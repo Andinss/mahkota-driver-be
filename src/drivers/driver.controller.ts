@@ -27,6 +27,7 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
+import { resolveDriverFileFolder } from './utils/driver-file.util';
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('drivers')
@@ -86,22 +87,7 @@ export class DriverController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          let folder = 'image/driver';
-
-          if (file.originalname.toLowerCase().includes('ktp')) {
-            folder = 'image/driver/ktp';
-          } else if (file.originalname.toLowerCase().includes('sim')) {
-            folder = 'image/driver/sim';
-          } else if (
-            file.originalname.toLowerCase().includes('foto') ||
-            file.originalname.toLowerCase().includes('profil')
-          ) {
-            folder = 'image/driver/photo-driver';
-          } else if (file.originalname.toLowerCase().includes('rumah')) {
-            folder = 'image/driver/garage-photo';
-          } else {
-            folder = 'image/driver/npwp';
-          }
+          const folder = resolveDriverFileFolder(file.originalname);
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -132,7 +118,7 @@ export class DriverController {
         }
       },
       limits: {
-        files: 5,
+        files: 6,
         fileSize: 5 * 1024 * 1024,
       },
     }),
@@ -151,22 +137,7 @@ export class DriverController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          let folder = 'image/driver';
-
-          if (file.originalname.toLowerCase().includes('ktp')) {
-            folder = 'image/driver  /ktp';
-          } else if (file.originalname.toLowerCase().includes('sim')) {
-            folder = 'image/driver/sim';
-          } else if (
-            file.originalname.toLowerCase().includes('foto') ||
-            file.originalname.toLowerCase().includes('profil')
-          ) {
-            folder = 'image/driver/photo-driver';
-          } else if (file.originalname.toLowerCase().includes('rumah')) {
-            folder = 'image/driver/garage-photo';
-          } else {
-            folder = 'image/driver/npwp';
-          }
+          const folder = resolveDriverFileFolder(file.originalname);
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -197,7 +168,7 @@ export class DriverController {
         }
       },
       limits: {
-        files: 5,
+        files: 6,
         fileSize: 5 * 1024 * 1024,
       },
     }),
