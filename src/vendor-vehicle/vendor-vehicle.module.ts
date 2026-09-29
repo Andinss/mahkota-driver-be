@@ -12,4 +12,3 @@ import { TypeOrmModule } from '@nestjs/typeorm';
   exports: [VendorVehicleService],
 })
 export class VendorVehicleModule {}
-  

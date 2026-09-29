@@ -394,6 +394,8 @@ export class VendorVehicleService {
       : [
           'name',
           'ownerName',
+          'hargaPokok',
+          'hargaJual',
           'pendapatan',
           'totalKendaraan',
           'status',
@@ -435,6 +437,10 @@ export class VendorVehicleService {
     const columnMap: Record<string, (v: VendorVehicle) => string> = {
       name: (v) => v.name || '-',
       ownerName: (v) => v.owner_name || '-',
+      hargaPokok: (v) =>
+        `Rp ${(Number(v.harga_pokok) || 0).toLocaleString('id-ID')}`,
+      hargaJual: (v) =>
+        `Rp ${(Number(v.harga_jual) || 0).toLocaleString('id-ID')}`,
       pendapatan: (v) =>
         `Rp ${Number(pendapatanMap[v.id] || 0).toLocaleString('id-ID')}`,
       totalKendaraan: (v) => String(Number(vehicleCounts[v.id] || 0)),
@@ -447,6 +453,8 @@ export class VendorVehicleService {
     const headerLabels: Record<string, string> = {
       name: 'Nama Vendor',
       ownerName: 'Nama Pemilik',
+      hargaPokok: 'Harga Pokok',
+      hargaJual: 'Harga Jual',
       pendapatan: 'Pendapatan',
       totalKendaraan: 'Total Kendaraan',
       status: 'Status',

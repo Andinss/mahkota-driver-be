@@ -313,7 +313,9 @@ export class RentalsService {
         const ymPay = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
         const lastDailyPayment = await queryRunner.manager
           .createQueryBuilder(DailyPayment, 'dp')
-          .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ymPay}/%` })
+          .where('dp.reference_number LIKE :prefix', {
+            prefix: `PAY-${ymPay}/%`,
+          })
           .orderBy('dp.reference_number', 'DESC')
           .getOne();
         let seqPay = 1;
