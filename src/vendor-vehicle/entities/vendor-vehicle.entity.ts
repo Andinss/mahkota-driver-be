@@ -25,6 +25,12 @@ export class VendorVehicle {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   pendapatan!: number;
 
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  harga_pokok!: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  harga_jual!: number;
+
   @Column({ type: 'int', default: 0 })
   total_kendaraan!: number;
 

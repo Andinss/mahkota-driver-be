@@ -27,6 +27,7 @@ import { KoinModule } from './koin/koin.module';
 import { GpsidModule } from './gpsid/gpsid.module';
 import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
 import { DailyPaymentsModule } from './daily-payments/daily-payments.module';
+import { MembershipModule } from './membership/membership.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -75,6 +76,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     VendorVehicleModule,
     GpsidModule,
     DailyPaymentsModule,
+    MembershipModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [

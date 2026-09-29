@@ -10,6 +10,7 @@ import { AuditLog } from './audit/entities/audit-log.entity';
 import { DriverKoin } from './koin/entities/driver-koin.entity';
 import { KoinTransaction } from './koin/entities/koin-transaction.entity';
 import { VendorVehicle } from './vendor-vehicle/entities/vendor-vehicle.entity';
+import { Membership } from './membership/entities/membership.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -345,6 +346,9 @@ async function seed() {
   const vendorVehicleRepository = app.get<Repository<VendorVehicle>>(
     getRepositoryToken(VendorVehicle),
   );
+  const membershipRepository = app.get<Repository<Membership>>(
+    getRepositoryToken(Membership),
+  );
 
   // ═══════════════════════════════════════════════════════════
   // 1. SEED PERMISSIONS
@@ -530,18 +534,24 @@ async function seed() {
       owner_name: 'Budi Santoso',
       status: 'active',
       logo: '',
+      harga_pokok: 150000,
+      harga_jual: 200000,
     },
     {
       name: 'PT Sejahtera Rent',
       owner_name: 'Rina Wulandari',
       status: 'active',
       logo: '',
+      harga_pokok: 175000,
+      harga_jual: 250000,
     },
     {
       name: 'UD Barokah Motor',
       owner_name: 'Andi Pratama',
       status: 'inactive',
       logo: '',
+      harga_pokok: 120000,
+      harga_jual: 160000,
     },
   ];
 
@@ -821,7 +831,54 @@ async function seed() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 10. SEED AUDIT LOGS
+  // 10. SEED MEMBERSHIPS
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n── Seeding Memberships ──');
+  const membershipsData = [
+    {
+      name: 'Regular',
+      level: 1,
+      fee: 200000,
+      description:
+        'Paket keanggotaan dasar untuk member Regular dengan benefit standar.',
+      benefits: [
+        'Akses booking kendaraan reguler',
+        'Diskon 5% untuk sewa bulanan',
+        'Support jam kerja',
+        'E-receipt & invoice digital',
+      ],
+      is_active: true,
+    },
+    {
+      name: 'Premium',
+      level: 2,
+      fee: 700000,
+      description:
+        'Paket keanggotaan tertinggi dengan benefit prioritas untuk member Premium.',
+      benefits: [
+        'Prioritas booking kendaraan',
+        'Diskon 20% untuk sewa bulanan',
+        'Support 24/7 dedicated',
+        'Laporan perjalanan bulanan',
+      ],
+      is_active: true,
+    },
+  ];
+
+  for (const mData of membershipsData) {
+    const existing = await membershipRepository.findOne({
+      where: [{ name: mData.name }, { level: mData.level }],
+    });
+    if (existing) {
+      console.log(`  Membership already exists: ${mData.name}`);
+      continue;
+    }
+    await membershipRepository.save(membershipRepository.create(mData));
+    console.log(`  Created membership: ${mData.name} (Level ${mData.level})`);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 11. SEED AUDIT LOGS
   // ═══════════════════════════════════════════════════════════
   console.log('\n── Seeding Audit Logs ──');
   const auditData = [
