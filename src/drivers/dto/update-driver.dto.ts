@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsEmail, IsOptional, IsString } from 'class-validator';
+import { IsDate, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateDriverDto {
   @IsOptional()
@@ -116,4 +116,12 @@ export class UpdateDriverDto {
   @IsOptional()
   @IsString()
   npwp_photo!: string;
+
+  @IsOptional()
+  @IsString()
+  skck?: string;
+
+  @IsOptional()
+  @IsUUID()
+  membership_id?: string;
 }
