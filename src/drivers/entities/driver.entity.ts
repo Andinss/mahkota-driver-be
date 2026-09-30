@@ -12,6 +12,7 @@ import {
 import { User } from 'src/users/entities/user.entity';
 import { DriverKoin } from '../../koin/entities/driver-koin.entity';
 import { Rental } from '../../rentals/entities/rental.entity';
+import { Membership } from '../../membership/entities/membership.entity';
 
 @Entity('drivers')
 export class Driver {
@@ -108,12 +109,22 @@ export class Driver {
   @Column({ type: 'varchar', length: 255, nullable: true })
   npwp_photo!: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  skck!: string;
+
   @Column({ type: 'uuid', nullable: true })
   created_by_id!: string;
 
   @ManyToOne(() => User, (user) => user.drivers)
   @JoinColumn({ name: 'created_by_id' })
   created_by!: User;
+
+  @Column({ type: 'uuid', nullable: true })
+  membership_id!: string;
+
+  @ManyToOne(() => Membership, { nullable: true })
+  @JoinColumn({ name: 'membership_id' })
+  membership!: Membership;
 
   @OneToOne(() => DriverKoin, (koin) => koin.driver)
   koin!: DriverKoin;

@@ -324,6 +324,7 @@ export class DriverService {
       existingDriver.kartu_keluarga,
       existingDriver.garage_photo,
       existingDriver.npwp_photo,
+      existingDriver.skck,
     ];
 
     for (const filePath of fileFields) {

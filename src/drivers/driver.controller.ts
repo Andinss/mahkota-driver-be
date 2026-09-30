@@ -118,7 +118,7 @@ export class DriverController {
         }
       },
       limits: {
-        files: 6,
+        files: 7,
         fileSize: 5 * 1024 * 1024,
       },
     }),
@@ -168,7 +168,7 @@ export class DriverController {
         }
       },
       limits: {
-        files: 6,
+        files: 7,
         fileSize: 5 * 1024 * 1024,
       },
     }),

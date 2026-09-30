@@ -4,7 +4,8 @@ export type DriverFileField =
   | 'profile_photo'
   | 'garage_photo'
   | 'kartu_keluarga'
-  | 'npwp_photo';
+  | 'npwp_photo'
+  | 'skck';
 
 const DRIVER_FILE_FOLDERS: Record<DriverFileField, string> = {
   national_id_card: 'image/driver/ktp',
@@ -13,12 +14,16 @@ const DRIVER_FILE_FOLDERS: Record<DriverFileField, string> = {
   garage_photo: 'image/driver/garage-photo',
   kartu_keluarga: 'image/driver/kartu-keluarga',
   npwp_photo: 'image/driver/npwp',
+  skck: 'image/driver/skck',
 };
 
 export function resolveDriverFileField(originalname: string): DriverFileField {
   const name = originalname.toLowerCase();
   const nameWithoutExt = name.replace(/\.[^.]+$/, '');
 
+  if (nameWithoutExt.includes('skck')) {
+    return 'skck';
+  }
   if (
     nameWithoutExt.includes('keluarga') ||
     /(^|[-_.])kk($|[-_.])/.test(nameWithoutExt)
@@ -36,6 +41,9 @@ export function resolveDriverFileField(originalname: string): DriverFileField {
   }
   if (name.includes('rumah')) {
     return 'garage_photo';
+  }
+  if (name.includes('npwp')) {
+    return 'npwp_photo';
   }
   return 'npwp_photo';
 }

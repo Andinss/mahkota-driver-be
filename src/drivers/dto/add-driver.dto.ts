@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  IsUUID, 
 } from 'class-validator';
 
 export class AddDriverDto {
@@ -113,4 +114,12 @@ export class AddDriverDto {
   @IsOptional()
   @IsString()
   npwp_photo?: string;
+
+  @IsOptional()
+  @IsString()
+  skck?: string;
+
+  @IsOptional()
+  @IsUUID()
+  membership_id?: string;
 }
