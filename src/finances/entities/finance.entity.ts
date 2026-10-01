@@ -58,6 +58,16 @@ export class Finance {
   })
   fee_admin_join!: number;
 
+  /**
+   * Jenis fee pada baris ini:
+   * - 'admin_join'    → Admin Fee Join (biaya admin saat sewa pertama, per jenis mobil).
+   * - 'membership_fee'→ Fee membership driver (join: fee penuh; upgrade: selisih level).
+   * Nominal selalu disimpan di kolom `fee_admin_join` agar seluruh perhitungan
+   * total/pembayaran tetap berlaku.
+   */
+  @Column({ type: 'varchar', length: 20, default: 'admin_join' })
+  fee_kind!: string;
+
   @Column('varchar', { length: 500 })
   notes!: string;
 

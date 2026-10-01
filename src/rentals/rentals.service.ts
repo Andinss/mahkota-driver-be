@@ -4,14 +4,14 @@ import {
   InternalServerErrorException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, QueryRunner, MoreThan } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
-import { Finance } from '../finances/entities/finance.entity';
 import { FinancePayment } from '../finances/entities/finance-payment.entity';
 import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
@@ -36,8 +36,6 @@ export class RentalsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(Driver)
     private readonly driversRepository: Repository<Driver>,
-    @InjectRepository(Finance)
-    private readonly financesRepository: Repository<Finance>,
     @InjectRepository(FinancePayment)
     private readonly financePaymentRepository: Repository<FinancePayment>,
     private readonly dataSource: DataSource,
@@ -136,9 +134,6 @@ export class RentalsService {
     const count = await this.rentalsRepository.count({
       where: { driver_id: driverId },
     });
-    const hasAdminFee = !!(await this.financesRepository.findOne({
-      where: { driver_id: driverId, fee_admin_join: MoreThan(0) },
-    }));
     return {
       success: true,
       message: 'Driver rental count retrieved successfully',
@@ -146,7 +141,6 @@ export class RentalsService {
         driver_id: driverId,
         rental_count: count,
         is_first_rental: count <= 1,
-        has_admin_fee: hasAdminFee,
       },
     };
   }
@@ -216,6 +210,33 @@ export class RentalsService {
         );
       }
 
+      const newStart = toLocalDateString(new Date(data.start_date));
+      const newEnd = toLocalDateString(new Date(data.end_date));
+
+      const driverConflict = await queryRunner.manager
+        .createQueryBuilder(Rental, 'r')
+        .where('r.driver_id = :driverId', { driverId: data.driver_id })
+        .andWhere('r.start_date <= :newEnd', { newEnd })
+        .andWhere('r.end_date >= :newStart', { newStart })
+        .getOne();
+      if (driverConflict) {
+        throw new ConflictException(
+          `Driver sudah memiliki rental lain pada periode tersebut (${driverConflict.rental_number})`,
+        );
+      }
+
+      const vehicleConflict = await queryRunner.manager
+        .createQueryBuilder(Rental, 'r')
+        .where('r.vehicle_id = :vehicleId', { vehicleId: data.vehicle_id })
+        .andWhere('r.start_date <= :newEnd', { newEnd })
+        .andWhere('r.end_date >= :newStart', { newStart })
+        .getOne();
+      if (vehicleConflict) {
+        throw new ConflictException(
+          `Kendaraan sudah memiliki rental lain pada periode tersebut (${vehicleConflict.rental_number})`,
+        );
+      }
+
       if (files && files.length > 0) {
         for (const file of files) {
           const originalName = file.originalname.toLowerCase();
@@ -239,59 +260,8 @@ export class RentalsService {
         status: 'rented',
       });
 
-      // Auto-create Finance linked to this Rental
-      const totalAmount = Number(data.daily_rate) * Number(data.total_duration);
       const dailyRate = Number(data.daily_rate) || 0;
-      const totalDuration = Number(data.total_duration) || 0;
-
-      // Compute admin fee: only charge if this driver has never had an admin fee before
-      let adminFee = 0;
-      const existingAdminFee = await queryRunner.manager.findOne(Finance, {
-        where: { driver_id: data.driver_id, fee_admin_join: MoreThan(0) },
-      });
-      if (!existingAdminFee) {
-        const pricingCategory = vehicle.pricing_category;
-        if (pricingCategory === 'Premium') {
-          adminFee = 700000;
-        } else if (pricingCategory === 'Reguler') {
-          adminFee = 500000;
-        }
-      }
-
       const rentalNumber = result.rental_number || `RENT-${Date.now()}`;
-
-      let savedFinance: Finance | null = null;
-      if (adminFee > 0) {
-        const now = new Date();
-        const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const lastFinance = await queryRunner.manager
-          .createQueryBuilder(Finance, 'f')
-          .where('f.reference_number LIKE :prefix', { prefix: `ADF-${ym}/%` })
-          .orderBy('f.reference_number', 'DESC')
-          .getOne();
-        let seq = 1;
-        if (lastFinance) {
-          const parts = lastFinance.reference_number.split('/');
-          const lastNum = parseInt(parts[parts.length - 1], 10);
-          if (!isNaN(lastNum)) seq = lastNum + 1;
-        }
-        const refNumber = `ADF-${ym}/${String(seq).padStart(4, '0')}`;
-
-        const finance = queryRunner.manager.create(Finance, {
-          payment_date: new Date(),
-          reference_number: refNumber,
-          payment_method: 'transfer',
-          amount_received: 0,
-          fee_admin_join: adminFee,
-          notes: `Admin Fee: ${vehicle.pricing_category} Rp ${adminFee.toLocaleString('id-ID')}`,
-          payer: `${driver.first_name} ${driver.last_name}`,
-          driver_id: data.driver_id,
-          finance_type: 'unpaid',
-          status: 'unpaid',
-          rentals: [{ id: result.id } as any],
-        });
-        savedFinance = await queryRunner.manager.save(finance);
-      }
 
       // Auto-create today's daily payment so it shows immediately in admin dashboard
       const today = new Date();
@@ -348,13 +318,6 @@ export class RentalsService {
         success: true,
         message: 'Rental created successfully',
         data: result,
-        finance: savedFinance
-          ? {
-              id: savedFinance.id,
-              reference_number: savedFinance.reference_number,
-              admin_fee: adminFee,
-            }
-          : null,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -368,7 +331,8 @@ export class RentalsService {
       }
       if (
         error instanceof NotFoundException ||
-        error instanceof BadRequestException
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
       ) {
         throw error;
       }

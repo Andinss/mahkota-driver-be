@@ -5,11 +5,14 @@ import { DriverController } from './driver.controller';
 import { Driver } from './entities/driver.entity';
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { Membership } from '../membership/entities/membership.entity';
+import { Finance } from '../finances/entities/finance.entity';
 
 @Module({
   providers: [DriverService],
   controllers: [DriverController],
-  imports: [TypeOrmModule.forFeature([Driver, DriverKoin, Membership])],
+  imports: [
+    TypeOrmModule.forFeature([Driver, DriverKoin, Membership, Finance]),
+  ],
   exports: [DriverService],
 })
 export class DriverModule {}

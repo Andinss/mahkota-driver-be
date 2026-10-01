@@ -6,10 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Vehicle } from './entities/vehicle.entity';
 import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity';
+import { Membership } from '../membership/entities/membership.entity';
 import { AddVehicleDto } from './dto/add-vehicle.dto';
+import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { VehicleQueryDto } from './dto/vehicle-query.dto';
 import { VehicleExportDto } from './dto/vehicle-export.dto';
 import * as ExcelJS from 'exceljs';
@@ -33,7 +35,9 @@ export class VehiclesService {
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
       .leftJoinAndSelect('v.vendor', 'vendor')
-      .orderBy('v.created_at', 'DESC');
+      .leftJoinAndSelect('v.memberships', 'membership')
+      .orderBy('v.created_at', 'DESC')
+      .addOrderBy('membership.level', 'ASC');
 
     if (query?.search) {
       qb.where(
@@ -70,7 +74,7 @@ export class VehiclesService {
   async findById(id: string) {
     const vehicle = await this.vehiclesRepository.findOne({
       where: { id },
-      relations: { vendor: true },
+      relations: { vendor: true, memberships: true },
     });
 
     if (!vehicle) {
@@ -87,7 +91,7 @@ export class VehiclesService {
   async findDetailById(id: string) {
     const vehicle = await this.vehiclesRepository.findOne({
       where: { id },
-      relations: { vendor: true },
+      relations: { vendor: true, memberships: true },
     });
 
     if (!vehicle) {
@@ -147,15 +151,30 @@ export class VehiclesService {
   async findByVehicleId(vehicleId: string): Promise<Vehicle | null> {
     let vehicle = await this.vehiclesRepository.findOne({
       where: { id: vehicleId },
-      relations: { vendor: true },
+      relations: { vendor: true, memberships: true },
     });
     if (!vehicle && /^[0-9a-f-]{36}$/i.test(vehicleId)) {
       vehicle = await this.vehiclesRepository.findOne({
         where: { id: vehicleId },
-        relations: { vendor: true },
+        relations: { vendor: true, memberships: true },
       });
     }
     return vehicle;
+  }
+
+  private async resolveMemberships(
+    ids?: string[],
+  ): Promise<Membership[] | undefined> {
+    if (ids === undefined) return undefined;
+    const clean = [...new Set(ids.filter(Boolean))];
+    if (clean.length === 0) return [];
+    const list = await this.vehiclesRepository.manager.find(Membership, {
+      where: { id: In(clean) },
+    });
+    if (list.length !== clean.length) {
+      throw new NotFoundException('Membership not found');
+    }
+    return list.sort((a, b) => a.level - b.level);
   }
 
   async fetchVehiclesFromGpsid(forceRefresh = false) {
@@ -173,7 +192,12 @@ export class VehiclesService {
         data.vehicle_photo = files.map((file) => file.path.replace(/\\/g, '/'));
       }
 
-      const vehicle = this.vehiclesRepository.create(data);
+      const { membership_ids, ...rest } = data;
+      const memberships = await this.resolveMemberships(membership_ids);
+      const vehicle = this.vehiclesRepository.create({
+        ...rest,
+        ...(memberships !== undefined ? { memberships } : {}),
+      });
       const result = await this.vehiclesRepository.save(vehicle);
 
       return {
@@ -196,7 +220,7 @@ export class VehiclesService {
 
   async update(
     vehicleId: string,
-    data: Partial<Vehicle>,
+    data: Partial<UpdateVehicleDto>,
     files?: Express.Multer.File[],
   ) {
     try {
@@ -237,14 +261,17 @@ export class VehiclesService {
         data.vehicle_photo = files.map((file) => file.path.replace(/\\/g, '/'));
       }
 
-      const result = await this.vehiclesRepository.update(
-        existingVehicle.id,
-        data,
-      );
+      const { membership_ids, ...rest } = data;
+      const memberships = await this.resolveMemberships(membership_ids);
 
-      if (result.affected === 0) {
-        throw new NotFoundException('Vehicle not found');
+      const toSave = this.vehiclesRepository.create({
+        ...existingVehicle,
+        ...rest,
+      });
+      if (memberships !== undefined) {
+        toSave.memberships = memberships;
       }
+      await this.vehiclesRepository.save(toSave);
 
       const vehicle = await this.findByVehicleId(vehicleId);
 
@@ -305,12 +332,13 @@ export class VehiclesService {
           'licensePlate',
           'vendor',
           'dailyRate',
-          'pricingCategory',
+          'membership',
           'status',
         ];
     const qb = this.vehiclesRepository
       .createQueryBuilder('v')
-      .leftJoinAndSelect('v.vendor', 'vendor');
+      .leftJoinAndSelect('v.vendor', 'vendor')
+      .leftJoinAndSelect('v.memberships', 'membership');
 
     if (query.search) {
       qb.where(
@@ -341,7 +369,10 @@ export class VehiclesService {
           : '-',
       licensePlate: (v) => v.license_plate || '-',
       dailyRate: (v) => `Rp ${Number(v.daily_rate).toLocaleString('id-ID')}`,
-      pricingCategory: (v) => v.pricing_category || '-',
+      membership: (v) =>
+        v.memberships && v.memberships.length > 0
+          ? v.memberships.map((m) => m.name).join(', ')
+          : '-',
       status: (v) => v.status || '-',
       is_active: (v) => (v.is_active ? 'Active' : 'Inactive'),
       color: (v) => v.color || '-',
@@ -356,7 +387,7 @@ export class VehiclesService {
       year: 'Year',
       licensePlate: 'License Plate',
       dailyRate: 'Daily Rate',
-      pricingCategory: 'Pricing Category',
+      membership: 'Kategori Membership',
       status: 'Status',
       is_active: 'Active Status',
       color: 'Color',

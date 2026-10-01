@@ -838,7 +838,7 @@ async function seed() {
     {
       name: 'Regular',
       level: 1,
-      fee: 200000,
+      fee: 500000,
       description:
         'Paket keanggotaan dasar untuk member Regular dengan benefit standar.',
       benefits: [
@@ -870,7 +870,13 @@ async function seed() {
       where: [{ name: mData.name }, { level: mData.level }],
     });
     if (existing) {
-      console.log(`  Membership already exists: ${mData.name}`);
+      if (Number(existing.fee) !== mData.fee) {
+        existing.fee = mData.fee;
+        await membershipRepository.save(existing);
+        console.log(`  Updated membership fee: ${mData.name} = ${mData.fee}`);
+      } else {
+        console.log(`  Membership already exists: ${mData.name}`);
+      }
       continue;
     }
     await membershipRepository.save(membershipRepository.create(mData));

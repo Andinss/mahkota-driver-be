@@ -7,10 +7,13 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { VendorVehicle } from '../../vendor-vehicle/entities/vendor-vehicle.entity';
 import { GpsTracking } from '../../monitoring/entities/gps-tracking.entity';
 import { Rental } from '../../rentals/entities/rental.entity';
+import { Membership } from '../../membership/entities/membership.entity';
 
 @Entity('vehicles')
 export class Vehicle {
@@ -74,6 +77,10 @@ export class Vehicle {
 
   @Column({ type: 'boolean', default: true })
   is_active!: boolean;
+
+  @ManyToMany(() => Membership, { nullable: true })
+  @JoinTable({ name: 'vehicle_memberships' })
+  memberships!: Membership[];
 
   @Column({ type: 'uuid', nullable: true })
   vendor_id!: string;

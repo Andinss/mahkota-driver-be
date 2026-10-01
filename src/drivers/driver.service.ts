@@ -9,6 +9,8 @@ import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Driver } from './entities/driver.entity';
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
+import { Membership } from '../membership/entities/membership.entity';
+import { Finance } from '../finances/entities/finance.entity';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
@@ -23,6 +25,10 @@ export class DriverService {
     private readonly driversRepository: Repository<Driver>,
     @InjectRepository(DriverKoin)
     private readonly driverKoinRepository: Repository<DriverKoin>,
+    @InjectRepository(Membership)
+    private readonly membershipRepository: Repository<Membership>,
+    @InjectRepository(Finance)
+    private readonly financesRepository: Repository<Finance>,
   ) {}
 
   async findAll(query?: DriverQueryDto) {
@@ -34,6 +40,7 @@ export class DriverService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.created_by', 'created_by')
       .leftJoinAndSelect('d.koin', 'koin')
+      .leftJoinAndSelect('d.membership', 'membership')
       .leftJoinAndSelect('d.rentals', 'rentals')
       .leftJoinAndSelect('rentals.vehicle', 'vehicle')
       .orderBy('d.created_at', 'DESC');
@@ -65,7 +72,11 @@ export class DriverService {
   async findById(id: string) {
     const driver = await this.driversRepository.findOne({
       where: { id },
-      relations: { created_by: true, rentals: { vehicle: true } },
+      relations: {
+        created_by: true,
+        membership: true,
+        rentals: { vehicle: true },
+      },
     });
 
     if (!driver) {
@@ -82,7 +93,11 @@ export class DriverService {
   async findDetailById(id: string) {
     const driver = await this.driversRepository.findOne({
       where: { id },
-      relations: { created_by: true, rentals: { vehicle: true } },
+      relations: {
+        created_by: true,
+        membership: true,
+        rentals: { vehicle: true },
+      },
     });
 
     if (!driver) {
@@ -132,13 +147,107 @@ export class DriverService {
   async findByEmployeeId(employeeId: string): Promise<Driver | null> {
     let driver = await this.driversRepository.findOne({
       where: { employee_id: employeeId },
+      relations: { membership: true },
     });
     if (!driver && /^[0-9a-f-]{36}$/i.test(employeeId)) {
       driver = await this.driversRepository.findOne({
         where: { id: employeeId },
+        relations: { membership: true },
       });
     }
     return driver;
+  }
+
+  private async resolveMembershipChange(
+    currentMembershipId: string | null | undefined,
+    targetMembershipId: string,
+  ) {
+    const target = await this.membershipRepository.findOne({
+      where: { id: targetMembershipId },
+    });
+    if (!target) {
+      throw new NotFoundException('Membership not found');
+    }
+
+    const current = currentMembershipId
+      ? await this.membershipRepository.findOne({
+          where: { id: currentMembershipId },
+        })
+      : null;
+
+    // Aturan fee:
+    // - tanpa membership sebelumnya → fee penuh (selisih dari 0)
+    // - upgrade ke level lebih tinggi → selisih fee
+    // - downgrade / level sama → tanpa fee (tanpa refund)
+    let fee = 0;
+    if (!current) {
+      fee = Number(target.fee) || 0;
+    } else if (target.level > current.level) {
+      fee = Math.max(0, (Number(target.fee) || 0) - (Number(current.fee) || 0));
+    }
+
+    return { current, target, fee };
+  }
+
+  private async createMembershipFeeBill(
+    driver: Driver,
+    target: Membership,
+    current: Membership | null,
+    fee: number,
+  ) {
+    if (!(fee > 0)) return null;
+
+    const now = new Date();
+    const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastBill = await this.financesRepository
+      .createQueryBuilder('f')
+      .where('f.reference_number LIKE :prefix', { prefix: `ADF-${ym}/%` })
+      .orderBy('f.reference_number', 'DESC')
+      .getOne();
+    let seq = 1;
+    if (lastBill) {
+      const parts = lastBill.reference_number.split('/');
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) seq = lastNum + 1;
+    }
+
+    const notes = current
+      ? `Upgrade membership ${current.name} (Level ${current.level}) → ${target.name} (Level ${target.level})`
+      : `Join membership ${target.name} (Level ${target.level})`;
+
+    const bill = this.financesRepository.create({
+      payment_date: now,
+      reference_number: `ADF-${ym}/${String(seq).padStart(4, '0')}`,
+      payment_method: 'cash',
+      amount_received: 0,
+      fee_admin_join: fee,
+      fee_kind: 'membership_fee',
+      notes,
+      payer: [driver.first_name, driver.last_name].filter(Boolean).join(' '),
+      driver_id: driver.id,
+      finance_type: 'unpaid',
+      status: 'unpaid',
+      is_active: true,
+    });
+    return this.financesRepository.save(bill);
+  }
+
+  private async billMembershipFee(
+    driver: Driver,
+    currentMembershipId: string | null | undefined,
+    targetMembershipId: string,
+  ) {
+    try {
+      const { current, target, fee } = await this.resolveMembershipChange(
+        currentMembershipId,
+        targetMembershipId,
+      );
+      if (fee > 0) {
+        await this.createMembershipFeeBill(driver, target, current, fee);
+      }
+    } catch (error) {
+      console.error('Failed to create membership fee bill:', error);
+    }
   }
 
   async create(
@@ -169,6 +278,10 @@ export class DriverService {
           balance: 0,
         });
         await this.driverKoinRepository.save(koin);
+      }
+
+      if (data.membership_id) {
+        await this.billMembershipFee(result, null, data.membership_id);
       }
 
       return {
@@ -243,6 +356,15 @@ export class DriverService {
 
       if (result.affected === 0) {
         throw new NotFoundException('Driver not found');
+      }
+
+      const newMembershipId = (data as Partial<Driver>).membership_id;
+      if (newMembershipId && newMembershipId !== existingDriver.membership_id) {
+        await this.billMembershipFee(
+          existingDriver,
+          existingDriver.membership_id,
+          newMembershipId,
+        );
       }
 
       const driver = await this.findByEmployeeId(employeeId);
@@ -358,7 +480,8 @@ export class DriverService {
 
     const qb = this.driversRepository
       .createQueryBuilder('d')
-      .leftJoinAndSelect('d.koin', 'koin');
+      .leftJoinAndSelect('d.koin', 'koin')
+      .leftJoinAndSelect('d.membership', 'membership');
 
     if (query.search) {
       qb.where(
@@ -389,6 +512,10 @@ export class DriverService {
       phone: (d) => d.phone || '-',
       email: (d) => d.email || '-',
       koin: (d) => String(d.koin?.balance || 0),
+      membership: (d) =>
+        d.membership
+          ? `${d.membership.name} (Level ${d.membership.level})`
+          : '-',
       gender: (d) => d.gender || '-',
       date_of_birth: (d) =>
         d.date_of_birth
@@ -412,6 +539,7 @@ export class DriverService {
       phone: 'Phone Number',
       email: 'Email',
       koin: 'Koin',
+      membership: 'Membership',
       gender: 'Gender',
       date_of_birth: 'Date of Birth',
       citizenship: 'Citizenship',
