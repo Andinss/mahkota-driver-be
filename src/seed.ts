@@ -11,6 +11,7 @@ import { DriverKoin } from './koin/entities/driver-koin.entity';
 import { KoinTransaction } from './koin/entities/koin-transaction.entity';
 import { VendorVehicle } from './vendor-vehicle/entities/vendor-vehicle.entity';
 import { Membership } from './membership/entities/membership.entity';
+import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -349,6 +350,9 @@ async function seed() {
   const membershipRepository = app.get<Repository<Membership>>(
     getRepositoryToken(Membership),
   );
+  const vehicleRepository = app.get<Repository<Vehicle>>(
+    getRepositoryToken(Vehicle),
+  );
 
   // ═══════════════════════════════════════════════════════════
   // 1. SEED PERMISSIONS
@@ -534,24 +538,18 @@ async function seed() {
       owner_name: 'Budi Santoso',
       status: 'active',
       logo: '',
-      harga_pokok: 150000,
-      harga_jual: 200000,
     },
     {
       name: 'PT Sejahtera Rent',
       owner_name: 'Rina Wulandari',
       status: 'active',
       logo: '',
-      harga_pokok: 175000,
-      harga_jual: 250000,
     },
     {
       name: 'UD Barokah Motor',
       owner_name: 'Andi Pratama',
       status: 'inactive',
       logo: '',
-      harga_pokok: 120000,
-      harga_jual: 160000,
     },
   ];
 
@@ -569,6 +567,79 @@ async function seed() {
     vendor = await vendorVehicleRepository.save(vendor);
     createdVendors.push(vendor);
     console.log(`  Created vendor: ${vData.name} (${vData.owner_name})`);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 4b. SEED VEHICLES (tanpa relasi membership)
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n── Seeding Vehicles ──');
+  const vehiclesData = [
+    {
+      merk: 'Toyota',
+      model: 'Avanza',
+      launching_year: new Date('2022-01-01T00:00:00.000Z'),
+      license_plate: 'B 1234 XYZ',
+      vin_number: 'MH1ZN41D5NK123456',
+      color: 'Silver',
+      engine_number: 'AGZ123456001',
+      daily_rate: 350000,
+      cost_price: 150000000,
+      status: 'Available',
+    },
+    {
+      merk: 'Daihatsu',
+      model: 'Xenia',
+      launching_year: new Date('2021-01-01T00:00:00.000Z'),
+      license_plate: 'B 5678 DEF',
+      vin_number: 'MH1BN41D2NK654321',
+      color: 'White',
+      engine_number: 'WVB123456002',
+      daily_rate: 300000,
+      cost_price: 130000000,
+      status: 'Available',
+    },
+    {
+      merk: 'Honda',
+      model: 'Brio',
+      launching_year: new Date('2023-01-01T00:00:00.000Z'),
+      license_plate: 'D 5678 ABC',
+      vin_number: 'MH2FN41D7PK246810',
+      color: 'Red',
+      engine_number: 'L15B123456003',
+      daily_rate: 275000,
+      cost_price: 140000000,
+      status: 'Available',
+    },
+    {
+      merk: 'Toyota',
+      model: 'Innova',
+      launching_year: new Date('2020-01-01T00:00:00.000Z'),
+      license_plate: 'B 111111 U',
+      vin_number: 'MH1KZ41D1LK135790',
+      color: 'Black',
+      engine_number: '2GD123456004',
+      daily_rate: 500000,
+      cost_price: 250000000,
+      status: 'Available',
+    },
+  ];
+
+  for (const vehData of vehiclesData) {
+    const existingVehicle = await vehicleRepository.findOne({
+      where: { license_plate: vehData.license_plate },
+    });
+    if (existingVehicle) {
+      console.log(`  Vehicle already exists: ${vehData.license_plate}`);
+      continue;
+    }
+    const vehicle = vehicleRepository.create({
+      ...vehData,
+      vendor_id: createdVendors[0]?.id,
+    });
+    await vehicleRepository.save(vehicle);
+    console.log(
+      `  Created vehicle: ${vehData.license_plate} (${vehData.merk} ${vehData.model})`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -860,6 +931,34 @@ async function seed() {
         'Diskon 20% untuk sewa bulanan',
         'Support 24/7 dedicated',
         'Laporan perjalanan bulanan',
+      ],
+      is_active: true,
+    },
+    {
+      name: 'VIP',
+      level: 3,
+      fee: 900000,
+      description:
+        'Paket keanggotaan VIP dengan akses kendaraan lebih luas dan layanan eksklusif.',
+      benefits: [
+        'Akses kendaraan tier Regular sampai VIP',
+        'Prioritas booking kendaraan VIP',
+        'Diskon 25% untuk sewa bulanan',
+        'Dedicated support 24/7',
+      ],
+      is_active: true,
+    },
+    {
+      name: 'Exlusif',
+      level: 4,
+      fee: 1000000,
+      description:
+        'Paket keanggotaan tertinggi dengan akses penuh ke seluruh kendaraan.',
+      benefits: [
+        'Akses seluruh kendaraan tanpa batas',
+        'Diskon 30% untuk sewa bulanan',
+        'Concierge service khusus',
+        'Gratis perpanjangan SIM & pajak tahunan',
       ],
       is_active: true,
     },

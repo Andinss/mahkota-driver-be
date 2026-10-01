@@ -36,23 +36,42 @@ export class DriverService {
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const qb = this.driversRepository
-      .createQueryBuilder('d')
-      .leftJoinAndSelect('d.created_by', 'created_by')
-      .leftJoinAndSelect('d.koin', 'koin')
-      .leftJoinAndSelect('d.membership', 'membership')
-      .leftJoinAndSelect('d.rentals', 'rentals')
-      .leftJoinAndSelect('rentals.vehicle', 'vehicle')
-      .orderBy('d.created_at', 'DESC');
+    // Count & id halaman tanpa join relasi: leftJoinAndSelect (d.rentals)
+    // + take membatasi baris JOIN, bukan entity unik.
+    const baseQb = this.driversRepository.createQueryBuilder('d');
 
     if (query?.search) {
-      qb.where(
+      baseQb.where(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
-    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('d.id', 'id')
+        .orderBy('d.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Driver[] = [];
+    if (pageIds.length > 0) {
+      data = await this.driversRepository
+        .createQueryBuilder('d')
+        .leftJoinAndSelect('d.created_by', 'created_by')
+        .leftJoinAndSelect('d.koin', 'koin')
+        .leftJoinAndSelect('d.membership', 'membership')
+        .leftJoinAndSelect('d.rentals', 'rentals')
+        .leftJoinAndSelect('rentals.vehicle', 'vehicle')
+        .whereInIds(pageIds)
+        .orderBy('d.created_at', 'DESC')
+        .getMany();
+    }
 
     const totalPages = Math.ceil(total / limit);
 
@@ -212,8 +231,8 @@ export class DriverService {
     }
 
     const notes = current
-      ? `Upgrade membership ${current.name} (Level ${current.level}) → ${target.name} (Level ${target.level})`
-      : `Join membership ${target.name} (Level ${target.level})`;
+      ? `Upgrade membership ${current.name} → ${target.name}`
+      : `Join membership ${target.name}`;
 
     const bill = this.financesRepository.create({
       payment_date: now,
@@ -512,10 +531,7 @@ export class DriverService {
       phone: (d) => d.phone || '-',
       email: (d) => d.email || '-',
       koin: (d) => String(d.koin?.balance || 0),
-      membership: (d) =>
-        d.membership
-          ? `${d.membership.name} (Level ${d.membership.level})`
-          : '-',
+      membership: (d) => (d.membership ? `${d.membership.name}` : '-'),
       gender: (d) => d.gender || '-',
       date_of_birth: (d) =>
         d.date_of_birth

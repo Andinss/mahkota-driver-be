@@ -46,13 +46,13 @@ export class MembershipService {
   }
 
   async create(dto: CreateMembershipDto) {
-    await this.assertLevelAvailable(dto.level);
     await this.assertNameAvailable(dto.name);
 
     try {
+      const nextLevel = await this.getNextLevel();
       const membership = this.membershipRepository.create({
         name: dto.name,
-        level: dto.level,
+        level: nextLevel,
         fee: dto.fee,
         description: dto.description ?? '',
         benefits: dto.benefits ?? [],
@@ -67,9 +67,7 @@ export class MembershipService {
       };
     } catch (error) {
       if (this.isUniqueViolation(error)) {
-        throw new BadRequestException(
-          'Membership name or level already exists',
-        );
+        throw new BadRequestException('Membership name already exists');
       }
       throw new InternalServerErrorException('Failed to create membership');
     }
@@ -84,9 +82,6 @@ export class MembershipService {
       throw new NotFoundException('Membership not found');
     }
 
-    if (dto.level !== undefined && dto.level !== existing.level) {
-      await this.assertLevelAvailable(dto.level, id);
-    }
     if (dto.name !== undefined && dto.name !== existing.name) {
       await this.assertNameAvailable(dto.name, id);
     }
@@ -102,9 +97,7 @@ export class MembershipService {
       };
     } catch (error) {
       if (this.isUniqueViolation(error)) {
-        throw new BadRequestException(
-          'Membership name or level already exists',
-        );
+        throw new BadRequestException('Membership name already exists');
       }
       throw new InternalServerErrorException('Failed to update membership');
     }
@@ -127,16 +120,12 @@ export class MembershipService {
     };
   }
 
-  private async assertLevelAvailable(level: number, excludeId?: string) {
-    const duplicate = await this.membershipRepository.findOne({
-      where: { level },
-    });
-
-    if (duplicate && duplicate.id !== excludeId) {
-      throw new BadRequestException(
-        `Level ${level} is already used by membership "${duplicate.name}"`,
-      );
-    }
+  private async getNextLevel(): Promise<number> {
+    const result = await this.membershipRepository
+      .createQueryBuilder('m')
+      .select('MAX(m.level)', 'max')
+      .getRawOne<{ max: string | number | null }>();
+    return Number(result?.max ?? 0) + 1;
   }
 
   private async assertNameAvailable(name: string, excludeId?: string) {

@@ -1,7 +1,6 @@
 import {
   IsString,
   IsOptional,
-  IsInt,
   IsNumber,
   IsBoolean,
   IsArray,
@@ -13,12 +12,6 @@ export class UpdateMembershipDto {
   @IsOptional()
   @IsString()
   name?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  level?: number;
 
   @IsOptional()
   @IsNumber()
