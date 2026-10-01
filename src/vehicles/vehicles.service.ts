@@ -163,10 +163,15 @@ export class VehiclesService {
   }
 
   private async resolveMemberships(
-    ids?: string[],
+    ids?: string[] | string,
   ): Promise<Membership[] | undefined> {
-    if (ids === undefined) return undefined;
-    const clean = [...new Set(ids.filter(Boolean))];
+    if (ids === undefined || ids === null) return undefined;
+    const idList = Array.isArray(ids)
+      ? ids
+      : String(ids)
+          .split(',')
+          .map((s) => s.trim());
+    const clean = [...new Set(idList.filter(Boolean))];
     if (clean.length === 0) return [];
     const list = await this.vehiclesRepository.manager.find(Membership, {
       where: { id: In(clean) },

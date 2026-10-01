@@ -14,18 +14,6 @@ export class UpdateVendorVehicleDto {
   owner_name!: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  harga_pokok?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  harga_jual?: number;
-
-  @IsOptional()
   @IsEnum(['active', 'inactive'])
   status?: string;
 }
