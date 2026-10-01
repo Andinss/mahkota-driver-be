@@ -59,6 +59,11 @@ export class AddVehicleDto {
   @Type(() => Number)
   daily_rate!: number;
 
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  cost_price!: number;
+
   @IsOptional()
   @IsEnum(['Reguler', 'Premium'])
   pricing_category!: string;

@@ -68,6 +68,9 @@ export class Vehicle {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   daily_rate!: number;
 
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  cost_price!: number;
+
   @Column({
     type: 'enum',
     enum: ['Reguler', 'Premium'],
