@@ -198,7 +198,7 @@ export class VehiclesController {
   )
   async update(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() updateVehicleDto: Partial<UpdateVehicleDto>,
+    @Body() updateVehicleDto: UpdateVehicleDto,
     @Param('id') id: string,
   ) {
     return this.vehicleService.update(id, updateVehicleDto, files);
