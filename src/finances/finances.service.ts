@@ -211,6 +211,7 @@ export class FinancesService {
       payment_method: finance.payment_method,
       amount_received: paidAmount,
       fee_admin_join: Number(finance.fee_admin_join) || 0,
+      fee_kind: finance.fee_kind || 'admin_join',
       paid_amount: paidAmount,
       remaining_amount: remainingAmount,
       payments_count:
@@ -1438,7 +1439,7 @@ export class FinancesService {
   }
 
   async getMyAdminFee(driverId: string) {
-    const finance = await this.financesRepository
+    const fees = await this.financesRepository
       .createQueryBuilder('f')
       .leftJoinAndSelect('f.driver', 'driver')
       .leftJoinAndSelect('f.rentals', 'rentals')
@@ -1447,10 +1448,10 @@ export class FinancesService {
       .where('f.driver_id = :driverId', { driverId })
       .andWhere('f.fee_admin_join > 0')
       .andWhere('f.is_active = :isActive', { isActive: true })
-      .orderBy('f.created_at', 'DESC')
-      .getOne();
+      .orderBy('f.created_at', 'ASC')
+      .getMany();
 
-    if (!finance) {
+    if (fees.length === 0) {
       return {
         success: true,
         message: 'No admin fee found',
@@ -1458,7 +1459,18 @@ export class FinancesService {
       };
     }
 
-    const totals = await this.attachTotals([finance]);
+    const totals = await this.attachTotals(fees);
+
+    // Tagihan paling lama yang masih memiliki sisa pembayaran;
+    // jika semua sudah lunas, tampilkan tagihan terbaru.
+    const outstanding = fees.find((f) => {
+      if (f.status === 'cancelled') return false;
+      const total = this.resolveTotalAmount(f);
+      const t = totals[f.id] || { paid: 0, pending: 0, count: 0 };
+      return total - t.paid > 0;
+    });
+    const finance = outstanding || fees[fees.length - 1];
+
     const view = this.buildFinanceView(
       finance,
       totals[finance.id] || { paid: 0, pending: 0, count: 0 },
@@ -1519,6 +1531,7 @@ export class FinancesService {
         reference_number: finance.reference_number,
         payment_date: finance.payment_date,
         fee_admin_join: Number(finance.fee_admin_join) || 0,
+        fee_kind: finance.fee_kind || 'admin_join',
         paid_amount: totals.paid,
         pending_amount: totals.pending,
         remaining_amount: remaining,
@@ -1556,6 +1569,7 @@ export class FinancesService {
           'payment_date',
           'payment_method',
           'fee_admin_join',
+          'fee_kind',
           'created_at',
           'vehicle',
           'vendor',
@@ -1643,7 +1657,7 @@ export class FinancesService {
       amount_received: 'Amount Received',
       payment_date: 'Payment Date',
       created_at: 'Tanggal Dibuat',
-      fee_admin_join: 'Admin Fee Join',
+      fee_admin_join: 'Fee Membership',
       status: 'Status',
       payment_method: 'Payment Method',
       driverName: 'Driver Name',
