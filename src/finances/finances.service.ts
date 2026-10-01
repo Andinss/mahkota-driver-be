@@ -337,33 +337,29 @@ export class FinancesService {
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const qb = this.financesRepository
-      .createQueryBuilder('f')
-      .leftJoinAndSelect('f.driver', 'driver')
-      .leftJoinAndSelect('f.rentals', 'rentals')
-      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
-      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
-      .orderBy('f.created_at', 'DESC');
+    // Count & id halaman tanpa join relasi: leftJoinAndSelect (f.rentals
+    // ManyToMany) + take membatasi baris JOIN, bukan entity unik.
+    const baseQb = this.financesRepository.createQueryBuilder('f');
 
     if (query?.search) {
-      qb.andWhere(
+      baseQb.andWhere(
         '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
     if (query?.payment_method) {
-      qb.andWhere('f.payment_method = :method', {
+      baseQb.andWhere('f.payment_method = :method', {
         method: query.payment_method,
       });
     }
 
     if (query?.driver_id) {
-      qb.andWhere('f.driver_id = :driverId', { driverId: query.driver_id });
+      baseQb.andWhere('f.driver_id = :driverId', { driverId: query.driver_id });
     }
 
     if (query?.rental_id) {
-      qb.innerJoin(
+      baseQb.innerJoin(
         'f.rentals',
         'filter_rentals',
         'filter_rentals.id = :rentalId',
@@ -372,24 +368,47 @@ export class FinancesService {
     }
 
     if (query?.status) {
-      qb.andWhere('f.status IN (:...statuses)', {
+      baseQb.andWhere('f.status IN (:...statuses)', {
         statuses: Array.isArray(query.status) ? query.status : [query.status],
       });
     }
 
     if (query?.start_date) {
-      qb.andWhere('f.payment_date >= :startDate', {
+      baseQb.andWhere('f.payment_date >= :startDate', {
         startDate: query.start_date,
       });
     }
 
     if (query?.end_date) {
-      qb.andWhere('f.payment_date <= :endDate', {
+      baseQb.andWhere('f.payment_date <= :endDate', {
         endDate: query.end_date,
       });
     }
 
-    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('f.id', 'id')
+        .orderBy('f.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Finance[] = [];
+    if (pageIds.length > 0) {
+      data = await this.financesRepository
+        .createQueryBuilder('f')
+        .leftJoinAndSelect('f.driver', 'driver')
+        .leftJoinAndSelect('f.rentals', 'rentals')
+        .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+        .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+        .whereInIds(pageIds)
+        .orderBy('f.created_at', 'DESC')
+        .getMany();
+    }
 
     const fallbackMap = await this.getFallbackVehicleMap(data);
 
@@ -586,23 +605,41 @@ export class FinancesService {
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const qb = this.financesRepository
+    const baseQb = this.financesRepository
       .createQueryBuilder('f')
-      .leftJoinAndSelect('f.driver', 'driver')
-      .leftJoinAndSelect('f.rentals', 'rentals')
-      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
-      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
-      .where('f.fee_admin_join > 0')
-      .orderBy('f.created_at', 'DESC');
+      .where('f.fee_admin_join > 0');
 
     if (query?.search) {
-      qb.andWhere(
+      baseQb.andWhere(
         '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
-    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('f.id', 'id')
+        .orderBy('f.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Finance[] = [];
+    if (pageIds.length > 0) {
+      data = await this.financesRepository
+        .createQueryBuilder('f')
+        .leftJoinAndSelect('f.driver', 'driver')
+        .leftJoinAndSelect('f.rentals', 'rentals')
+        .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+        .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+        .whereInIds(pageIds)
+        .orderBy('f.created_at', 'DESC')
+        .getMany();
+    }
 
     const totals = await this.attachTotals(data);
 
@@ -1387,30 +1424,48 @@ export class FinancesService {
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const qb = this.financesRepository
+    const baseQb = this.financesRepository
       .createQueryBuilder('f')
-      .leftJoinAndSelect('f.driver', 'driver')
-      .leftJoinAndSelect('f.rentals', 'rentals')
-      .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
-      .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
       .where('f.driver_id = :driverId', { driverId })
-      .andWhere('f.is_active = :isActive', { isActive: true })
-      .orderBy('f.created_at', 'DESC');
+      .andWhere('f.is_active = :isActive', { isActive: true });
 
     if (query?.search) {
-      qb.andWhere(
+      baseQb.andWhere(
         '(f.reference_number ILIKE :search OR f.payer ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
     if (query?.status) {
-      qb.andWhere('f.status IN (:...statuses)', {
+      baseQb.andWhere('f.status IN (:...statuses)', {
         statuses: Array.isArray(query.status) ? query.status : [query.status],
       });
     }
 
-    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('f.id', 'id')
+        .orderBy('f.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Finance[] = [];
+    if (pageIds.length > 0) {
+      data = await this.financesRepository
+        .createQueryBuilder('f')
+        .leftJoinAndSelect('f.driver', 'driver')
+        .leftJoinAndSelect('f.rentals', 'rentals')
+        .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
+        .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+        .whereInIds(pageIds)
+        .orderBy('f.created_at', 'DESC')
+        .getMany();
+    }
 
     const fallbackMap = await this.getFallbackVehicleMap(data);
     const totals = await this.attachTotals(data);

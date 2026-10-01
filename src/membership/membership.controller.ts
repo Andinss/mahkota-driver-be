@@ -47,7 +47,7 @@ export class MembershipController {
         username: req.user?.username || 'system',
         action: 'CREATE_MEMBERSHIP',
         target: `membership/${membership?.id || ''}`,
-        details: `Created membership ${dto.name} (level ${dto.level})`,
+        details: `Created membership ${membership?.name || dto.name} (level ${membership?.level})`,
         ...meta,
         status: 'success',
       })

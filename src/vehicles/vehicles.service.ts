@@ -32,29 +32,49 @@ export class VehiclesService {
     const limit = query?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const qb = this.vehiclesRepository
-      .createQueryBuilder('v')
-      .leftJoinAndSelect('v.vendor', 'vendor')
-      .leftJoinAndSelect('v.memberships', 'membership')
-      .orderBy('v.created_at', 'DESC')
-      .addOrderBy('membership.level', 'ASC');
+    // Query tanpa join relasi untuk count & id halaman:
+    // leftJoinAndSelect + take membatasi baris JOIN (bukan entity unik),
+    // sehingga mobil dengan banyak membership bisa hilang dari halaman.
+    const baseQb = this.vehiclesRepository.createQueryBuilder('v');
 
     if (query?.search) {
-      qb.where(
+      baseQb.where(
         '(v.merk ILIKE :search OR v.model ILIKE :search OR v.license_plate ILIKE :search OR v.vin_number ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
     if (query?.status) {
-      qb.andWhere('v.status = :status', { status: query.status });
+      baseQb.andWhere('v.status = :status', { status: query.status });
     }
 
     if (query?.vendor_id) {
-      qb.andWhere('v.vendor_id = :vendorId', { vendorId: query.vendor_id });
+      baseQb.andWhere('v.vendor_id = :vendorId', { vendorId: query.vendor_id });
     }
 
-    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('v.id', 'id')
+        .orderBy('v.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Vehicle[] = [];
+    if (pageIds.length > 0) {
+      data = await this.vehiclesRepository
+        .createQueryBuilder('v')
+        .leftJoinAndSelect('v.vendor', 'vendor')
+        .leftJoinAndSelect('v.memberships', 'membership')
+        .whereInIds(pageIds)
+        .orderBy('v.created_at', 'DESC')
+        .addOrderBy('membership.level', 'ASC')
+        .getMany();
+    }
 
     const totalPages = Math.ceil(total / limit);
 

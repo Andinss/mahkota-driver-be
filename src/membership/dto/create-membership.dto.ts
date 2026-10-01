@@ -2,7 +2,6 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsInt,
   IsNumber,
   IsBoolean,
   IsArray,
@@ -14,11 +13,6 @@ export class CreateMembershipDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
-
-  @IsInt()
-  @Min(1)
-  @Type(() => Number)
-  level!: number;
 
   @IsNumber()
   @Min(0)
