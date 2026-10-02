@@ -7,8 +7,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VendorVehicle } from './entities/vendor-vehicle.entity';
-import { Finance } from '../finances/entities/finance.entity';
-import { FinancePayment } from '../finances/entities/finance-payment.entity';
 import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
 import { CreateVendorVehicleDto } from './dto/create-vendor-vehicle.dto';
 import { VendorVehicleQueryDto } from './dto/vendor-vehicle-query.dto';
@@ -48,12 +46,13 @@ export class VendorVehicleService {
 
     const ids = data.map((vendor) => vendor.id);
     const vehicleCounts = await this.getVehicleCounts(ids);
-    const pendapatanMap = await this.getPaidPendapatan(ids);
+    const marginMap = await this.getRentalMargins(ids);
 
     const mappedData = data.map((vendor) => ({
       ...vendor,
       total_kendaraan: vehicleCounts[vendor.id] || 0,
-      pendapatan: pendapatanMap[vendor.id] || 0,
+      pendapatan_vendor: marginMap[vendor.id]?.vendor || 0,
+      pendapatan_pt: marginMap[vendor.id]?.pt || 0,
     }));
 
     return {
@@ -94,57 +93,37 @@ export class VendorVehicleService {
     return counts;
   }
 
-  private async getPaidPendapatan(
+  private async getRentalMargins(
     vendorIds: string[],
-  ): Promise<Record<string, number>> {
+  ): Promise<Record<string, { vendor: number; pt: number }>> {
     if (vendorIds.length === 0) {
       return {};
     }
 
     const rows = await this.vendorRepository.manager
       .createQueryBuilder()
-      .select('t.vendor_id', 'vendor_id')
-      .addSelect('COALESCE(SUM(t.amount), 0)', 'total')
-      .from(
-        (sub) =>
-          sub
-            .select('payment.id', 'payment_id')
-            .addSelect('vehicle.vendor_id', 'vendor_id')
-            .addSelect('payment.amount', 'amount')
-            .distinct(true)
-            .from(FinancePayment, 'payment')
-            .innerJoin(Finance, 'finance', 'finance.id = payment.finance_id')
-            .innerJoin('finance_rentals', 'fr', 'fr.finance_id = finance.id')
-            .innerJoin('rentals', 'rental', 'rental.id = fr.rental_id')
-            .innerJoin('vehicles', 'vehicle', 'vehicle.id = rental.vehicle_id')
-            .where('payment.status = :status', { status: 'paid' })
-            .andWhere('vehicle.vendor_id IN (:...vendorIds)', { vendorIds }),
-        't',
-      )
-      .groupBy('t.vendor_id')
-      .getRawMany();
-
-    const result: Record<string, number> = {};
-    for (const row of rows) {
-      result[row.vendor_id] = Number(row.total) || 0;
-    }
-
-    const dailyRows = await this.vendorRepository.manager
-      .createQueryBuilder()
       .select('vehicle.vendor_id', 'vendor_id')
-      .addSelect('COALESCE(SUM(dp.amount), 0)', 'total')
+      .addSelect('COALESCE(SUM(vehicle.cost_price), 0)', 'pendapatan_vendor')
+      .addSelect(
+        'COALESCE(SUM(dp.amount - vehicle.cost_price), 0)',
+        'pendapatan_pt',
+      )
       .from(DailyPayment, 'dp')
-      .innerJoin('vehicles', 'vehicle', 'vehicle.id = dp.vehicle_id')
+      .innerJoin('dp.vehicle', 'vehicle')
       .where('dp.status = :status', { status: 'paid' })
       .andWhere('vehicle.vendor_id IN (:...vendorIds)', { vendorIds })
       .groupBy('vehicle.vendor_id')
       .getRawMany();
 
-    for (const row of dailyRows) {
-      result[row.vendor_id] =
-        (result[row.vendor_id] || 0) + (Number(row.total) || 0);
+    const result: Record<string, { vendor: number; pt: number }> = {};
+    for (const row of rows) {
+      if (row.vendor_id) {
+        result[row.vendor_id] = {
+          vendor: Number(row.pendapatan_vendor) || 0,
+          pt: Number(row.pendapatan_pt) || 0,
+        };
+      }
     }
-
     return result;
   }
 
@@ -160,7 +139,7 @@ export class VendorVehicleService {
 
     {
       const total = await this.getVehicleCount(id);
-      const pendapatanMap = await this.getPaidPendapatan([id]);
+      const marginMap = await this.getRentalMargins([id]);
 
       return {
         success: true,
@@ -168,7 +147,8 @@ export class VendorVehicleService {
         data: {
           ...vendor,
           total_kendaraan: total,
-          pendapatan: pendapatanMap[id] || 0,
+          pendapatan_vendor: marginMap[id]?.vendor || 0,
+          pendapatan_pt: marginMap[id]?.pt || 0,
           vehicles: undefined,
         },
       };
@@ -185,8 +165,7 @@ export class VendorVehicleService {
       throw new NotFoundException('Vendor not found');
     }
 
-    const pendapatanMap = await this.getPaidPendapatan([vendor.id]);
-    const totalPendapatan = pendapatanMap[vendor.id] || 0;
+    const marginMap = await this.getRentalMargins([vendor.id]);
     const vehicles = (vendor.vehicles || []).map((v) => ({
       id: v.id,
       merk: v.merk,
@@ -194,6 +173,7 @@ export class VendorVehicleService {
       license_plate: v.license_plate,
       status: v.status,
       daily_rate: Number(v.daily_rate) || 0,
+      cost_price: Number(v.cost_price) || 0,
     }));
 
     return {
@@ -201,7 +181,8 @@ export class VendorVehicleService {
       message: 'Vendor detail retrieved successfully',
       data: {
         ...vendor,
-        pendapatan: totalPendapatan,
+        pendapatan_vendor: marginMap[vendor.id]?.vendor || 0,
+        pendapatan_pt: marginMap[vendor.id]?.pt || 0,
         total_kendaraan: vehicles.length,
         vehicles,
       },
@@ -238,13 +219,15 @@ export class VendorVehicleService {
 
     const vendors = await this.vendorRepository.find({ select: { id: true } });
     const vendorIds = vendors.map((v) => v.id);
-    const pendapatanMap = await this.getPaidPendapatan(vendorIds);
-    const totalPendapatan = Object.values(pendapatanMap).reduce(
-      (acc, value) => acc + value,
+    const marginMap = await this.getRentalMargins(vendorIds);
+    const totalPendapatanVendor = Object.values(marginMap).reduce(
+      (acc, margin) => acc + margin.vendor,
       0,
     );
-    const averagePendapatan =
-      totalVendors > 0 ? Math.round(totalPendapatan / totalVendors) : 0;
+    const totalPendapatanPt = Object.values(marginMap).reduce(
+      (acc, margin) => acc + margin.pt,
+      0,
+    );
 
     return {
       success: true,
@@ -253,8 +236,8 @@ export class VendorVehicleService {
         total_vendors: totalVendors,
         active: totalActive,
         inactive: totalInactive,
-        total_pendapatan: totalPendapatan,
-        average_pendapatan: averagePendapatan,
+        total_pendapatan_vendor: totalPendapatanVendor,
+        total_pendapatan_pt: totalPendapatanPt,
         status_breakdown: statusBreakdown,
       },
     };
@@ -394,9 +377,8 @@ export class VendorVehicleService {
       : [
           'name',
           'ownerName',
-          'hargaPokok',
-          'hargaJual',
-          'pendapatan',
+          'pendapatanVendor',
+          'pendapatanPt',
           'totalKendaraan',
           'status',
           'createdAt',
@@ -429,16 +411,18 @@ export class VendorVehicleService {
     const vendors = await qb.orderBy('v.created_at', 'DESC').getMany();
 
     const vendorIds = vendors.map((v) => v.id);
-    const [vehicleCounts, pendapatanMap] = await Promise.all([
+    const [vehicleCounts, marginMap] = await Promise.all([
       this.getVehicleCounts(vendorIds),
-      this.getPaidPendapatan(vendorIds),
+      this.getRentalMargins(vendorIds),
     ]);
 
     const columnMap: Record<string, (v: VendorVehicle) => string> = {
       name: (v) => v.name || '-',
       ownerName: (v) => v.owner_name || '-',
-      pendapatan: (v) =>
-        `Rp ${Number(pendapatanMap[v.id] || 0).toLocaleString('id-ID')}`,
+      pendapatanVendor: (v) =>
+        `Rp ${Number(marginMap[v.id]?.vendor || 0).toLocaleString('id-ID')}`,
+      pendapatanPt: (v) =>
+        `Rp ${Number(marginMap[v.id]?.pt || 0).toLocaleString('id-ID')}`,
       totalKendaraan: (v) => String(Number(vehicleCounts[v.id] || 0)),
       status: (v) => (v.status === 'active' ? 'Aktif' : 'Nonaktif'),
       createdAt: (v) =>
@@ -449,9 +433,8 @@ export class VendorVehicleService {
     const headerLabels: Record<string, string> = {
       name: 'Nama Vendor',
       ownerName: 'Nama Pemilik',
-      hargaPokok: 'Harga Pokok',
-      hargaJual: 'Harga Jual',
-      pendapatan: 'Pendapatan',
+      pendapatanVendor: 'Pendapatan Vendor',
+      pendapatanPt: 'Pendapatan PT',
       totalKendaraan: 'Total Kendaraan',
       status: 'Status',
       createdAt: 'Tanggal Bergabung',
