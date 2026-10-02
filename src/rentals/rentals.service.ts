@@ -13,7 +13,6 @@ import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
 import { FinancePayment } from '../finances/entities/finance-payment.entity';
-import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
 
 function toLocalDateString(date: Date): string {
@@ -259,58 +258,6 @@ export class RentalsService {
       await queryRunner.manager.update(Vehicle, data.vehicle_id, {
         status: 'rented',
       });
-
-      const dailyRate = Number(data.daily_rate) || 0;
-      const rentalNumber = result.rental_number || `RENT-${Date.now()}`;
-
-      // Auto-create today's daily payment so it shows immediately in admin dashboard
-      const today = new Date();
-      const todayLocal = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate(),
-      );
-      const todayStr = toLocalDateString(todayLocal);
-
-      const existingDailyPayment = await queryRunner.manager
-        .createQueryBuilder(DailyPayment, 'dp')
-        .where('dp.rental_id = :rentalId', { rentalId: result.id })
-        .andWhere('dp.payment_date = :today', { today: todayStr })
-        .getOne();
-
-      let savedDailyPayment: DailyPayment | null = null;
-      if (!existingDailyPayment) {
-        const ymPay = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
-        const lastDailyPayment = await queryRunner.manager
-          .createQueryBuilder(DailyPayment, 'dp')
-          .where('dp.reference_number LIKE :prefix', {
-            prefix: `PAY-${ymPay}/%`,
-          })
-          .orderBy('dp.reference_number', 'DESC')
-          .getOne();
-        let seqPay = 1;
-        if (lastDailyPayment) {
-          const parts = lastDailyPayment.reference_number.split('/');
-          const lastNum = parseInt(parts[parts.length - 1], 10);
-          if (!isNaN(lastNum)) seqPay = lastNum + 1;
-        }
-        const payRefNumber = `PAY-${ymPay}/${String(seqPay).padStart(4, '0')}`;
-
-        const dailyPayment = queryRunner.manager.create(DailyPayment, {
-          rental_id: result.id,
-          driver_id: data.driver_id,
-          vehicle_id: data.vehicle_id,
-          payment_date: todayStr,
-          amount: dailyRate,
-          status: 'unpaid',
-          reference_number: payRefNumber,
-          notes: `Daily payment for rental ${rentalNumber}`,
-        });
-        savedDailyPayment = await queryRunner.manager.save(dailyPayment);
-        if (!savedDailyPayment?.id) {
-          throw new Error('Failed to save daily payment: no ID returned');
-        }
-      }
 
       await queryRunner.commitTransaction();
 

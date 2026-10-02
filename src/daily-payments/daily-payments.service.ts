@@ -72,6 +72,7 @@ export class DailyPaymentsService {
         .leftJoinAndSelect('r.driver', 'driver')
         .where('r.start_date <= :today', { today: todayStr })
         .andWhere('r.end_date >= :today', { today: todayStr })
+        .andWhere('r.created_at < :dayStart', { dayStart: today })
         .getMany();
 
       this.logger.log(
