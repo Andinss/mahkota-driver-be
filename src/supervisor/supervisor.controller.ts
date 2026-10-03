@@ -11,6 +11,7 @@ import {
   UseInterceptors,
   UseGuards,
   Param,
+  Query,
 } from '@nestjs/common';
 import { AddDriverDto } from '../drivers/dto/add-driver.dto';
 import { UpdateDriverDto } from '../drivers/dto/update-driver.dto';
@@ -31,8 +32,8 @@ export class SupervisorController {
 
   @Get()
   @Permissions('driver.read.own')
-  findAll(@Req() req: any) {
-    return this.supervisorService.findAll(req.user.id);
+  findAll(@Req() req: any, @Query('is_active') is_active?: string) {
+    return this.supervisorService.findAll(req.user.id, is_active);
   }
 
   @Get('count')

@@ -70,7 +70,8 @@ export class DailyPaymentsService {
         .createQueryBuilder('r')
         .leftJoinAndSelect('r.vehicle', 'vehicle')
         .leftJoinAndSelect('r.driver', 'driver')
-        .where('r.start_date <= :today', { today: todayStr })
+        .where('r.status = :activeStatus', { activeStatus: 'active' })
+        .andWhere('r.start_date <= :today', { today: todayStr })
         .andWhere('r.end_date >= :today', { today: todayStr })
         .andWhere('r.created_at < :dayStart', { dayStart: today })
         .getMany();

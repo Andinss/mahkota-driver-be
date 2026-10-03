@@ -37,8 +37,17 @@ export class VehiclesService {
     // sehingga mobil dengan banyak membership bisa hilang dari halaman.
     const baseQb = this.vehiclesRepository.createQueryBuilder('v');
 
+    // Sembunyikan kendaraan nonaktif secara default (is_active=true),
+    // kecuali diminta eksplisit: is_active=false | all
+    const isActive = query?.is_active ?? 'true';
+    if (isActive !== 'all') {
+      baseQb.where('v.is_active = :isActive', {
+        isActive: isActive !== 'false',
+      });
+    }
+
     if (query?.search) {
-      baseQb.where(
+      baseQb.andWhere(
         '(v.merk ILIKE :search OR v.model ILIKE :search OR v.license_plate ILIKE :search OR v.vin_number ILIKE :search)',
         { search: `%${query.search}%` },
       );
@@ -365,8 +374,13 @@ export class VehiclesService {
       .leftJoinAndSelect('v.vendor', 'vendor')
       .leftJoinAndSelect('v.memberships', 'membership');
 
+    const isActive = query.is_active ?? 'true';
+    if (isActive !== 'all') {
+      qb.where('v.is_active = :isActive', { isActive: isActive !== 'false' });
+    }
+
     if (query.search) {
-      qb.where(
+      qb.andWhere(
         '(v.merk ILIKE :search OR v.model ILIKE :search OR v.license_plate ILIKE :search OR v.vin_number ILIKE :search)',
         { search: `%${query.search}%` },
       );

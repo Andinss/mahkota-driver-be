@@ -7,6 +7,7 @@ import {
   Delete,
   Param,
   ParseUUIDPipe,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { PermissionsService } from './permissions.service';
@@ -29,8 +30,8 @@ export class PermissionsController {
 
   @Get()
   @Permissions('permission.read')
-  findAll() {
-    return this.permissionsService.findAll();
+  findAll(@Query('is_active') is_active?: string) {
+    return this.permissionsService.findAll(is_active);
   }
 
   @Get(':id')

@@ -20,10 +20,15 @@ export class SupervisorService {
     private readonly driversRepository: Repository<Driver>,
   ) {}
 
-  async findAll(userId: string) {
-    const drivers = await this.driversRepository.find({
-      where: { created_by_id: userId },
-    });
+  async findAll(userId: string, isActive: string = 'true') {
+    const where: { created_by_id: string; is_active?: boolean } = {
+      created_by_id: userId,
+    };
+    if (isActive !== 'all') {
+      where.is_active = isActive !== 'false';
+    }
+
+    const drivers = await this.driversRepository.find({ where });
     return {
       success: true,
       message: 'Drivers retrieved successfully',

@@ -54,8 +54,8 @@ export class RoleController {
 
   @Get()
   @Permissions('role.read')
-  findAll() {
-    return this.roleService.findAll();
+  findAll(@Query('is_active') is_active?: string) {
+    return this.roleService.findAll(is_active);
   }
 
   @Get('export')

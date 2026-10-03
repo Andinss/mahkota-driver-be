@@ -25,4 +25,8 @@ export class DriverExportDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false', 'all'])
+  is_active?: string;
 }

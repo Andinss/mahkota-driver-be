@@ -25,4 +25,8 @@ export class RentalQueryDto {
   @IsOptional()
   @IsEnum(['lepas kunci', 'pakai supir'])
   rental_service?: string;
+
+  @IsOptional()
+  @IsEnum(['all', 'active', 'upcoming', 'completed', 'stopped'])
+  status?: string;
 }

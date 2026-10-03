@@ -22,6 +22,9 @@ export class Permission {
   @Column({ type: 'varchar', length: 255, nullable: true })
   description: string;
 
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
   @ManyToMany(() => Role, (role) => role.permissions)
   roles: Role[];
 

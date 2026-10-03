@@ -12,8 +12,13 @@ export class SettingsService {
     private readonly settingsRepository: Repository<Setting>,
   ) {}
 
-  async findAll() {
-    const settings = await this.settingsRepository.find();
+  async findAll(isActive: string = 'true') {
+    const where: { is_active?: boolean } = {};
+    if (isActive !== 'all') {
+      where.is_active = isActive !== 'false';
+    }
+
+    const settings = await this.settingsRepository.find({ where });
     return {
       success: true,
       message: 'Settings retrieved successfully',

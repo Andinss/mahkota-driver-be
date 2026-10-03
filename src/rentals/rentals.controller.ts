@@ -59,6 +59,12 @@ export class RentalsController {
     return this.rentalService.getSummary();
   }
 
+  @Get('ongoing')
+  @Permissions('rental.read')
+  getOngoing() {
+    return this.rentalService.getOngoing();
+  }
+
   @Get('driver/:driverId/rental-count')
   @Permissions('rental.read')
   getDriverRentalCount(@Param('driverId') driverId: string) {
@@ -176,5 +182,11 @@ export class RentalsController {
   @Permissions('rental.delete')
   delete(@Param('id') id: string) {
     return this.rentalService.delete(id);
+  }
+
+  @Patch('stop/:id')
+  @Permissions('rental.update')
+  stop(@Param('id') id: string) {
+    return this.rentalService.stop(id);
   }
 }

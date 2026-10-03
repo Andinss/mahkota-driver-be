@@ -17,8 +17,14 @@ export class MembershipService {
     private readonly membershipRepository: Repository<Membership>,
   ) {}
 
-  async findAll() {
+  async findAll(isActive: string = 'true') {
+    const where: { is_active?: boolean } = {};
+    if (isActive !== 'all') {
+      where.is_active = isActive !== 'false';
+    }
+
     const memberships = await this.membershipRepository.find({
+      where,
       order: { level: 'ASC' },
     });
 
@@ -101,6 +107,25 @@ export class MembershipService {
       }
       throw new InternalServerErrorException('Failed to update membership');
     }
+  }
+
+  async updateStatus(id: string, is_active: boolean) {
+    const existing = await this.membershipRepository.findOne({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Membership not found');
+    }
+
+    existing.is_active = is_active;
+    const saved = await this.membershipRepository.save(existing);
+
+    return {
+      success: true,
+      message: `Membership marked as ${is_active ? 'Active' : 'Inactive'} successfully`,
+      data: saved,
+    };
   }
 
   async delete(id: string) {

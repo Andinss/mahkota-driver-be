@@ -40,8 +40,17 @@ export class DriverService {
     // + take membatasi baris JOIN, bukan entity unik.
     const baseQb = this.driversRepository.createQueryBuilder('d');
 
+    // Sembunyikan driver nonaktif secara default (is_active=true),
+    // kecuali diminta eksplisit: is_active=false | all
+    const isActive = query?.is_active ?? 'true';
+    if (isActive !== 'all') {
+      baseQb.where('d.is_active = :isActive', {
+        isActive: isActive !== 'false',
+      });
+    }
+
     if (query?.search) {
-      baseQb.where(
+      baseQb.andWhere(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
@@ -377,7 +386,7 @@ export class DriverService {
         throw new NotFoundException('Driver not found');
       }
 
-      const newMembershipId = (data as Partial<Driver>).membership_id;
+      const newMembershipId = data.membership_id;
       if (newMembershipId && newMembershipId !== existingDriver.membership_id) {
         await this.billMembershipFee(
           existingDriver,
@@ -502,8 +511,13 @@ export class DriverService {
       .leftJoinAndSelect('d.koin', 'koin')
       .leftJoinAndSelect('d.membership', 'membership');
 
+    const isActive = query.is_active ?? 'true';
+    if (isActive !== 'all') {
+      qb.where('d.is_active = :isActive', { isActive: isActive !== 'false' });
+    }
+
     if (query.search) {
-      qb.where(
+      qb.andWhere(
         '(d.first_name ILIKE :search OR d.last_name ILIKE :search OR d.employee_id ILIKE :search OR d.phone ILIKE :search OR d.email ILIKE :search)',
         { search: `%${query.search}%` },
       );

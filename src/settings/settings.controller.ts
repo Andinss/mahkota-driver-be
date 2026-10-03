@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
@@ -22,8 +23,8 @@ export class SettingsController {
 
   @Get()
   @Permissions('setting.read')
-  findAll() {
-    return this.settingsService.findAll();
+  findAll(@Query('is_active') is_active?: string) {
+    return this.settingsService.findAll(is_active);
   }
 
   @Get(':key')
