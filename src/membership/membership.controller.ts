@@ -7,6 +7,7 @@ import {
   Delete,
   Param,
   ParseUUIDPipe,
+  Query,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -56,8 +57,8 @@ export class MembershipController {
   }
 
   @Get()
-  findAll() {
-    return this.membershipService.findAll();
+  findAll(@Query('is_active') is_active?: string) {
+    return this.membershipService.findAll(is_active);
   }
 
   @Get(':id')
@@ -80,6 +81,32 @@ export class MembershipController {
         action: 'UPDATE_MEMBERSHIP',
         target: `membership/${id}`,
         details: `Updated membership ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
+  }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('is_active') is_active: string | boolean,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const activeValue =
+      typeof is_active === 'boolean'
+        ? is_active
+        : String(is_active).toLowerCase() === 'true';
+    const meta = extractRequestMeta(req);
+    const result = await this.membershipService.updateStatus(id, activeValue);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'UPDATE_MEMBERSHIP',
+        target: `membership/${id}`,
+        details: `Membership ${id} marked as ${activeValue ? 'Active' : 'Inactive'}`,
         ...meta,
         status: 'success',
       })

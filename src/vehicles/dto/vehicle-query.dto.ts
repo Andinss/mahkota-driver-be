@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsNumber, Min, IsEnum } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  IsEnum,
+  IsIn,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VehicleQueryDto {
@@ -32,4 +39,8 @@ export class VehicleQueryDto {
   @IsOptional()
   @IsString()
   vendor_id?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false', 'all'])
+  is_active?: string;
 }

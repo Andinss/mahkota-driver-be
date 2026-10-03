@@ -22,6 +22,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException();
     }
+    if (user.is_active === false) {
+      throw new UnauthorizedException('Akun Anda sedang nonaktif');
+    }
+    if (user.role && user.role.is_active === false) {
+      throw new UnauthorizedException('Role Anda sedang nonaktif');
+    }
+    if (user.driver && user.driver.is_active === false) {
+      throw new UnauthorizedException('Akun Anda sedang nonaktif');
+    }
     return user;
   }
 }

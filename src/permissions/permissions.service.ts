@@ -17,8 +17,13 @@ export class PermissionsService {
     private readonly permissionsRepository: Repository<Permission>,
   ) {}
 
-  async findAll() {
-    const permissions = await this.permissionsRepository.find();
+  async findAll(isActive: string = 'true') {
+    const where: { is_active?: boolean } = {};
+    if (isActive !== 'all') {
+      where.is_active = isActive !== 'false';
+    }
+
+    const permissions = await this.permissionsRepository.find({ where });
     return {
       success: true,
       message: 'Permissions retrieved successfully',

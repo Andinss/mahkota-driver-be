@@ -22,7 +22,6 @@ export class VendorVehicle {
   @Column({ type: 'varchar', length: 255, nullable: true })
   logo!: string;
 
-
   @Column({
     type: 'enum',
     enum: ['active', 'inactive'],

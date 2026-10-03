@@ -36,8 +36,11 @@ export class VendorVehicleService {
       });
     }
 
-    if (query?.status) {
-      qb.andWhere('v.status = :status', { status: query.status });
+    // Sembunyikan vendor nonaktif secara default, kecuali diminta eksplisit:
+    // status=inactive | all
+    const status = query?.status ?? 'active';
+    if (status !== 'all') {
+      qb.andWhere('v.status = :status', { status });
     }
 
     const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
@@ -392,8 +395,9 @@ export class VendorVehicleService {
       });
     }
 
-    if (query.status) {
-      qb.andWhere('v.status = :status', { status: query.status });
+    const status = query.status ?? 'active';
+    if (status !== 'all') {
+      qb.andWhere('v.status = :status', { status });
     }
 
     if (query.start_date) {

@@ -23,6 +23,9 @@ export class Setting {
   @Column({ nullable: true })
   description?: string;
 
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
   @CreateDateColumn()
   created_at!: Date;
 

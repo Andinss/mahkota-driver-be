@@ -60,6 +60,15 @@ export class UsersService {
       .leftJoinAndSelect('u.role', 'role')
       .orderBy('u.created_at', 'DESC');
 
+    // Sembunyikan user nonaktif secara default (is_active=true),
+    // kecuali diminta eksplisit: is_active=false | all
+    const isActive = query?.is_active ?? 'true';
+    if (isActive !== 'all') {
+      qb.andWhere('u.is_active = :isActive', {
+        isActive: isActive !== 'false',
+      });
+    }
+
     if (query?.search) {
       qb.andWhere(
         '(u.username ILIKE :search OR u.fullname ILIKE :search OR u.email ILIKE :search)',
@@ -199,8 +208,13 @@ export class UsersService {
       .createQueryBuilder('u')
       .leftJoinAndSelect('u.role', 'role');
 
+    const isActive = query.is_active ?? 'true';
+    if (isActive !== 'all') {
+      qb.where('u.is_active = :isActive', { isActive: isActive !== 'false' });
+    }
+
     if (query.search) {
-      qb.where(
+      qb.andWhere(
         '(u.username ILIKE :search OR u.fullname ILIKE :search OR u.email ILIKE :search)',
         { search: `%${query.search}%` },
       );

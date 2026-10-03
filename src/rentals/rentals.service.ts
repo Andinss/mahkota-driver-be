@@ -73,6 +73,26 @@ export class RentalsService {
       qb.andWhere('r.rental_service = :svc', { svc: query.rental_service });
     }
 
+    if (query?.status && query.status !== 'all') {
+      const todayStr = toLocalDateString(new Date());
+
+      if (query.status === 'stopped') {
+        qb.andWhere('r.status = :stopped', { stopped: 'stopped' });
+      } else if (query.status === 'active') {
+        qb.andWhere('r.status = :activeStatus', { activeStatus: 'active' })
+          .andWhere('r.start_date <= :today', { today: todayStr })
+          .andWhere('r.end_date >= :today', { today: todayStr });
+      } else if (query.status === 'upcoming') {
+        qb.andWhere('r.status = :activeStatus', {
+          activeStatus: 'active',
+        }).andWhere('r.start_date > :today', { today: todayStr });
+      } else if (query.status === 'completed') {
+        qb.andWhere('r.status = :activeStatus', {
+          activeStatus: 'active',
+        }).andWhere('r.end_date < :today', { today: todayStr });
+      }
+    }
+
     const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
@@ -144,6 +164,37 @@ export class RentalsService {
     };
   }
 
+/**
+   * Rental yang belum berhenti dan periodenya belum habis (berjalan atau
+   * akan berjalan). Dipakai form rental baru untuk menyembunyikan driver dan
+   * kendaraan yang masih terikat kontrak lain.
+   */
+  async getOngoing() {
+    const todayStr = toLocalDateString(new Date());
+
+    const data = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .select([
+        'r.id',
+        'r.rental_number',
+        'r.driver_id',
+        'r.vehicle_id',
+        'r.start_date',
+        'r.end_date',
+        'r.status',
+      ])
+      .where('r.status = :activeStatus', { activeStatus: 'active' })
+      .andWhere('r.end_date >= :today', { today: todayStr })
+      .orderBy('r.end_date', 'ASC')
+      .getMany();
+
+    return {
+      success: true,
+      message: 'Ongoing rentals retrieved successfully',
+      data,
+    };
+  }
+
   async getSummary() {
     const totalResult = await this.rentalsRepository
       .createQueryBuilder('r')
@@ -199,6 +250,11 @@ export class RentalsService {
           `Driver with id ${data.driver_id} not found`,
         );
       }
+      if (!driver.is_active) {
+        throw new BadRequestException(
+          'Driver yang dipilih sedang nonaktif dan tidak dapat digunakan untuk rental baru',
+        );
+      }
 
       const vehicle = await this.vehiclesRepository.findOne({
         where: { id: data.vehicle_id },
@@ -208,6 +264,11 @@ export class RentalsService {
           `Vehicle with id ${data.vehicle_id} not found`,
         );
       }
+      if (!vehicle.is_active) {
+        throw new BadRequestException(
+          'Kendaraan yang dipilih sedang nonaktif dan tidak dapat digunakan untuk rental baru',
+        );
+      }
 
       const newStart = toLocalDateString(new Date(data.start_date));
       const newEnd = toLocalDateString(new Date(data.end_date));
@@ -215,6 +276,7 @@ export class RentalsService {
       const driverConflict = await queryRunner.manager
         .createQueryBuilder(Rental, 'r')
         .where('r.driver_id = :driverId', { driverId: data.driver_id })
+        .andWhere('r.status = :activeStatus', { activeStatus: 'active' })
         .andWhere('r.start_date <= :newEnd', { newEnd })
         .andWhere('r.end_date >= :newStart', { newStart })
         .getOne();
@@ -227,6 +289,7 @@ export class RentalsService {
       const vehicleConflict = await queryRunner.manager
         .createQueryBuilder(Rental, 'r')
         .where('r.vehicle_id = :vehicleId', { vehicleId: data.vehicle_id })
+        .andWhere('r.status = :activeStatus', { activeStatus: 'active' })
         .andWhere('r.start_date <= :newEnd', { newEnd })
         .andWhere('r.end_date >= :newStart', { newStart })
         .getOne();
@@ -376,6 +439,83 @@ export class RentalsService {
     }
   }
 
+  /**
+   * Menghentikan rental yang sedang berjalan sebelum tanggal akhirnya.
+   * Kontrak tetap tersimpan sebagai riwayat (tidak dihapus), tetapi:
+   * - tidak lagi dihitung sebagai rental aktif (tabel status & cron),
+   * - tidak lagi memblokir driver/kendaraan untuk rental baru,
+   * - kendaraan kembali Available bila tidak ada rental lain yang memakainya.
+   */
+  async stop(rentalId: string) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const existingRental = await queryRunner.manager.findOne(Rental, {
+        where: { id: rentalId },
+      });
+
+      if (!existingRental) {
+        throw new NotFoundException('Rental not found');
+      }
+
+      if (existingRental.status === 'stopped') {
+        throw new BadRequestException('Rental ini sudah dihentikan');
+      }
+
+      await queryRunner.manager.update(Rental, existingRental.id, {
+        status: 'stopped',
+        stopped_at: new Date(),
+      });
+
+      if (existingRental.vehicle_id) {
+        const todayStr = toLocalDateString(new Date());
+        const otherOngoing = await queryRunner.manager
+          .createQueryBuilder(Rental, 'r')
+          .where('r.vehicle_id = :vehicleId', {
+            vehicleId: existingRental.vehicle_id,
+          })
+          .andWhere('r.id != :rentalId', { rentalId: existingRental.id })
+          .andWhere('r.status = :activeStatus', { activeStatus: 'active' })
+          .andWhere('r.end_date >= :today', { today: todayStr })
+          .getOne();
+
+        if (!otherOngoing) {
+          await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, {
+            status: 'Available',
+          });
+        }
+      }
+
+      await queryRunner.commitTransaction();
+
+      const rental = await this.rentalsRepository.findOne({
+        where: { id: existingRental.id },
+        relations: { driver: true, vehicle: true },
+      });
+
+      return {
+        success: true,
+        message: 'Rental stopped successfully',
+        data: rental,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Failed to stop rental:', error);
+
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to stop rental');
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async exportData(query: RentalExportDto) {
     const format = query.format || 'csv';
     const selectedColumns = query.columns
@@ -446,6 +586,7 @@ export class RentalsService {
       fuelEfficiency: (r) => '-',
       maintenance: (r) => '-',
       status: (r) => {
+        if (r.status === 'stopped') return 'Stopped';
         try {
           const now = new Date();
           const start = r.start_date ? new Date(r.start_date) : null;

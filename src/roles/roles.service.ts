@@ -24,8 +24,14 @@ export class RoleService {
     private readonly permissionsRepository: Repository<Permission>,
   ) {}
 
-  async findAll() {
+  async findAll(isActive: string = 'true') {
+    const where: { is_active?: boolean } = {};
+    if (isActive !== 'all') {
+      where.is_active = isActive !== 'false';
+    }
+
     const roles = await this.rolesRepository.find({
+      where,
       relations: { permissions: true },
     });
     return {

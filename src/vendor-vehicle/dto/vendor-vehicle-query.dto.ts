@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, Min, IsEnum } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VendorVehicleQueryDto {
@@ -19,6 +19,6 @@ export class VendorVehicleQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsEnum(['active', 'inactive'])
+  @IsIn(['active', 'inactive', 'all'])
   status?: string;
 }

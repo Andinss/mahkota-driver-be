@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -98,6 +99,35 @@ export class AuthService {
         })
         .catch(() => {});
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.is_active === false) {
+      await this.auditService
+        .create({
+          username: loginDto.email,
+          action: 'Login Failed',
+          target: 'Auth',
+          details: 'Account is inactive',
+          ip_address: meta?.ip_address,
+          user_agent: meta?.user_agent,
+          status: 'failed',
+        })
+        .catch(() => {});
+      throw new ForbiddenException(
+        'Akun Anda sedang nonaktif. Hubungi administrator.',
+      );
+    }
+
+    if (user.role && user.role.is_active === false) {
+      throw new ForbiddenException(
+        'Role Anda sedang nonaktif. Hubungi administrator.',
+      );
+    }
+
+    if (user.driver && user.driver.is_active === false) {
+      throw new ForbiddenException(
+        'Akun Anda sedang nonaktif. Hubungi administrator.',
+      );
     }
 
     const payload = { sub: user.id };

@@ -17,4 +17,8 @@ export class UserExportDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false', 'all'])
+  is_active?: string;
 }

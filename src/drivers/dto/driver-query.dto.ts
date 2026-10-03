@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class DriverQueryDto {
@@ -17,4 +17,8 @@ export class DriverQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false', 'all'])
+  is_active?: string;
 }

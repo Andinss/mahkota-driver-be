@@ -63,6 +63,19 @@ export class Rental {
   })
   rental_service!: string;
 
+  // Status siklus hidup rental. 'active' = kontrak masih berjalan normal
+  // (dihitung juga dari rentang tanggal), 'stopped' = dihentikan manual
+  // sebelum tanggal akhir sehingga tidak lagi generates tagihan harian.
+  @Column({
+    type: 'enum',
+    enum: ['active', 'stopped'],
+    default: 'active',
+  })
+  status!: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  stopped_at!: Date | null;
+
   @ManyToMany(() => Finance, (finance) => finance.rentals)
   finances!: Finance[];
 
