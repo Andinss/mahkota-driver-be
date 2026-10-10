@@ -28,6 +28,8 @@ import { GpsidModule } from './gpsid/gpsid.module';
 import { VendorVehicleModule } from './vendor-vehicle/vendor-vehicle.module';
 import { DailyPaymentsModule } from './daily-payments/daily-payments.module';
 import { MembershipModule } from './membership/membership.module';
+import { MethodPaymentModule } from './method-payment/method-payment.module';
+import { RentalContractModule } from './rental-contract/rental-contract.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -77,6 +79,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     GpsidModule,
     DailyPaymentsModule,
     MembershipModule,
+    MethodPaymentModule,
+    RentalContractModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [

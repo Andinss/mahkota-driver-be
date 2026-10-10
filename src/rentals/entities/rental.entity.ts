@@ -88,14 +88,15 @@ export class Rental {
   @UpdateDateColumn({ type: 'timestamp' })
   updated_at!: Date;
 
+  // Nomor urut (RENT/tahun/bulan/0001) dihitung di service sebelum insert
+  // karena butuh akses ke database. Hook ini hanya pengaman jika ada jalur
+  // insert yang belum mengisi nomornya.
   @BeforeInsert()
   generateRentalNumber() {
+    if (this.rental_number) return;
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0');
-    this.rental_number = `RENT/${year}/${month}/${random}`;
+    this.rental_number = `RENT/${year}/${month}/0001`;
   }
 }

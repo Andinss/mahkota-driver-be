@@ -11,8 +11,11 @@ import {
   StreamableFile,
   Param,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import { FinancesService } from './finances.service';
 import { AddFinanceDto } from './dto/add-finance.dto';
@@ -25,6 +28,8 @@ import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { AuditService } from '../audit/audit.service';
 import { extractRequestMeta } from '../audit/audit.utils';
+import { proofImageUpload } from '../common/proof-upload.util';
+import { ProofCleanupInterceptor } from '../common/proof-cleanup.interceptor';
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('finances')
@@ -141,8 +146,13 @@ export class FinancesController {
 
   @Post('my-finances/:id/payments')
   @Permissions('finance.create')
+  @UseInterceptors(
+    FileInterceptor('proof_image', proofImageUpload),
+    new ProofCleanupInterceptor(),
+  )
   async createMyPayment(
     @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: CreateFinancePaymentDto,
     @Req() req: any,
   ) {
@@ -155,6 +165,7 @@ export class FinancesController {
       id,
       dto,
       driverId,
+      file,
     );
     this.auditService
       .create({

@@ -15,6 +15,8 @@ import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity'
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { PayDailyPaymentDto } from './dto/pay-daily-payment.dto';
+import { MethodPayment } from '../method-payment/entities/method-payment.entity';
+import { removeStoredFile, toStoredPath } from '../common/proof-upload.util';
 
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear();
@@ -150,15 +152,18 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
 
     if (query?.status) {
       qb.where('dp.status = :status', { status: query.status });
     } else {
+      // 'pending' (menunggu verifikasi) & 'rejected' (ditolak, menunggu
+      // submit ulang driver) tetap muncul walau tanggal lampau.
       qb.where(
-        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
-        { today: todayStr, unpaid: 'unpaid' },
+        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status IN (:...pastStatuses)))',
+        { today: todayStr, pastStatuses: ['unpaid', 'pending', 'rejected'] },
       );
     }
 
@@ -186,6 +191,25 @@ export class DailyPaymentsService {
       payment_date: dp.payment_date,
       amount: Number(dp.amount),
       status: dp.status,
+      payment_method: dp.payment_method,
+      method_payment_id: dp.method_payment_id,
+      method_payment: dp.method_payment
+        ? {
+            id: dp.method_payment.id,
+            code: dp.method_payment.code,
+            name: dp.method_payment.name,
+            provider: dp.method_payment.provider,
+            method: dp.method_payment.method,
+            account_number: dp.method_payment.account_number,
+            account_holder: dp.method_payment.account_holder,
+          }
+        : null,
+      source_account: dp.source_account,
+      proof_image: dp.proof_image,
+      transaction_id: dp.transaction_id,
+      payment_notes: dp.payment_notes,
+      rejection_reason: dp.rejection_reason,
+      paid_date: dp.paid_date,
       reference_number: dp.reference_number,
       notes: dp.notes,
       created_at: dp.created_at,
@@ -234,6 +258,7 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .where('dp.driver_id = :driverId', { driverId })
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
@@ -252,6 +277,25 @@ export class DailyPaymentsService {
       payment_date: dp.payment_date,
       amount: Number(dp.amount),
       status: dp.status,
+      payment_method: dp.payment_method,
+      method_payment_id: dp.method_payment_id,
+      method_payment: dp.method_payment
+        ? {
+            id: dp.method_payment.id,
+            code: dp.method_payment.code,
+            name: dp.method_payment.name,
+            provider: dp.method_payment.provider,
+            method: dp.method_payment.method,
+            account_number: dp.method_payment.account_number,
+            account_holder: dp.method_payment.account_holder,
+          }
+        : null,
+      source_account: dp.source_account,
+      proof_image: dp.proof_image,
+      transaction_id: dp.transaction_id,
+      payment_notes: dp.payment_notes,
+      rejection_reason: dp.rejection_reason,
+      paid_date: dp.paid_date,
       reference_number: dp.reference_number,
       notes: dp.notes,
       created_at: dp.created_at,
@@ -271,7 +315,11 @@ export class DailyPaymentsService {
     };
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, reason?: string) {
+    const allowed = ['paid', 'pending', 'unpaid', 'cancelled', 'rejected'];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException('Status pembayaran tidak valid');
+    }
     const payment = await this.dailyPaymentsRepository.findOne({
       where: { id },
     });
@@ -279,6 +327,9 @@ export class DailyPaymentsService {
       return { success: false, message: 'Daily payment not found' };
     }
     payment.status = status;
+    // Alasan penolakan hanya relevan saat `rejected`, di status lain dibersihkan.
+    payment.rejection_reason =
+      status === 'rejected' ? reason?.trim() || null : null;
     await this.dailyPaymentsRepository.save(payment);
     return {
       success: true,
@@ -293,6 +344,7 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .where('dp.id = :id', { id })
       .getOne();
 
@@ -320,6 +372,25 @@ export class DailyPaymentsService {
         payment_date: dp.payment_date,
         amount: Number(dp.amount),
         status: dp.status,
+        payment_method: dp.payment_method,
+        method_payment_id: dp.method_payment_id,
+        method_payment: dp.method_payment
+          ? {
+              id: dp.method_payment.id,
+              code: dp.method_payment.code,
+              name: dp.method_payment.name,
+              provider: dp.method_payment.provider,
+              method: dp.method_payment.method,
+              account_number: dp.method_payment.account_number,
+              account_holder: dp.method_payment.account_holder,
+            }
+          : null,
+        source_account: dp.source_account,
+        proof_image: dp.proof_image,
+        transaction_id: dp.transaction_id,
+        payment_notes: dp.payment_notes,
+        rejection_reason: dp.rejection_reason,
+        paid_date: dp.paid_date,
         reference_number: dp.reference_number || '-',
         notes: dp.notes || '',
         created_at: dp.created_at,
@@ -332,16 +403,29 @@ export class DailyPaymentsService {
     id: string,
     dto: PayDailyPaymentDto,
     driverId: string,
+    file?: Express.Multer.File,
   ) {
+    const proofPath = file ? toStoredPath(file) : null;
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      const rows = await queryRunner.query(
-        'SELECT id, rental_id, driver_id, vehicle_id, payment_date, amount, status, reference_number, notes FROM daily_payments WHERE id = $1 FOR UPDATE',
+      const rows = (await queryRunner.query(
+        'SELECT id, rental_id, driver_id, vehicle_id, payment_date, amount, status, reference_number, notes, proof_image FROM daily_payments WHERE id = $1 FOR UPDATE',
         [id],
-      );
+      )) as Array<{
+        id: string;
+        rental_id: string;
+        driver_id: string;
+        vehicle_id: string;
+        payment_date: Date;
+        amount: number;
+        status: string;
+        reference_number: string | null;
+        notes: string | null;
+        proof_image: string | null;
+      }>;
       if (!rows || rows.length === 0) {
         throw new NotFoundException('Tagihan harian tidak ditemukan');
       }
@@ -352,9 +436,51 @@ export class DailyPaymentsService {
       if (row.status === 'paid') {
         throw new BadRequestException('Tagihan harian sudah lunas');
       }
+      if (row.status === 'pending') {
+        throw new BadRequestException(
+          'Pembayaran sudah dikonfirmasi dan sedang menunggu verifikasi admin',
+        );
+      }
       if (row.status === 'cancelled') {
         throw new BadRequestException('Tagihan harian sudah dibatalkan');
       }
+
+      // --- Rekening tujuan & bukti bayar ---
+      let methodPayment: MethodPayment | null = null;
+      if (dto.method_payment_id) {
+        methodPayment = await queryRunner.manager.findOne(MethodPayment, {
+          where: { id: dto.method_payment_id },
+        });
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan tidak ditemukan');
+        }
+        if (!methodPayment.is_active) {
+          throw new BadRequestException('Rekening tujuan sudah tidak aktif');
+        }
+      }
+
+      const paymentMethod = methodPayment
+        ? methodPayment.method === 'e_wallet' || methodPayment.method === 'qris'
+          ? 'e-wallet'
+          : 'transfer'
+        : dto.payment_method;
+      const isTransferLike =
+        paymentMethod === 'transfer' || paymentMethod === 'e-wallet';
+
+      if (isTransferLike) {
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan wajib dipilih');
+        }
+        if (!dto.transaction_id?.trim()) {
+          throw new BadRequestException('ID transaksi wajib diisi');
+        }
+        if (!proofPath) {
+          throw new BadRequestException('Bukti pembayaran wajib diunggah');
+        }
+      }
+
+      // Transfer/e-wallet -> menunggu verifikasi admin; koin/tunai -> lunas.
+      const nextStatus = isTransferLike ? 'pending' : 'paid';
 
       const total = Number(row.amount);
       const amount = Number(dto.amount);
@@ -367,7 +493,7 @@ export class DailyPaymentsService {
         );
       }
 
-      if (dto.payment_method === 'saldo') {
+      if (paymentMethod === 'saldo') {
         const koin = await this.findKoinForUpdate(queryRunner, driverId);
         const balanceBefore = koin ? Number(koin.balance) : 0;
         const balanceAfter = balanceBefore - amount;
@@ -389,40 +515,59 @@ export class DailyPaymentsService {
           balance_after: balanceAfter,
           reference_id: id,
           reference_number:
-            dto.reference_number || row.reference_number || `PAY-${Date.now()}`,
+            dto.transaction_id?.trim() ||
+            row.reference_number ||
+            `PAY-${Date.now()}`,
           notes:
-            dto.notes ||
+            dto.payment_notes ||
             `Koin berkurang untuk tagihan harian ${row.reference_number || id}`,
         });
         await queryRunner.manager.save(tx);
       }
 
       await queryRunner.manager.update(DailyPayment, id, {
-        status: 'paid',
-        reference_number: dto.reference_number || row.reference_number,
-        notes: dto.notes
-          ? `${row.notes || ''}${row.notes ? '\n' : ''}${dto.notes}`.trim()
-          : row.notes,
+        status: nextStatus,
+        payment_method: paymentMethod,
+        method_payment_id: methodPayment?.id ?? null,
+        source_account: dto.source_account?.trim() || null,
+        proof_image: proofPath,
+        paid_date: new Date(dto.payment_date),
+        // Submit ulang (mis. setelah ditolak) menimpa data driver lama;
+        // alasan penolakan dihapus karena sudah diajukan ulang.
+        rejection_reason: null,
+        // Nomor tagihan (`reference_number`) & catatan tagihan (`notes`)
+        // tidak ditimpa — data driver disimpan di kolom terpisah.
+        transaction_id: dto.transaction_id?.trim() || null,
+        payment_notes: dto.payment_notes?.trim() || null,
       });
 
       await queryRunner.commitTransaction();
 
+      // Bukti lama diganti bukti baru — file sebelumnya dihapus dari disk
+      // (dilakukan setelah commit supaya kalau gagal, file lama tetap ada).
+      if (row.proof_image && row.proof_image !== proofPath) {
+        removeStoredFile(row.proof_image);
+      }
+
       return {
         success: true,
         message:
-          dto.payment_method === 'saldo'
-            ? 'Tagihan harian berhasil dibayar menggunakan Koin'
-            : 'Pembayaran tagihan harian berhasil dicatat',
+          nextStatus === 'pending'
+            ? 'Konfirmasi pembayaran terkirim dan menunggu verifikasi admin'
+            : paymentMethod === 'saldo'
+              ? 'Tagihan harian berhasil dibayar menggunakan Koin'
+              : 'Pembayaran tagihan harian berhasil dicatat',
         data: {
           id,
           amount,
-          payment_method: dto.payment_method,
-          status: 'paid',
+          payment_method: paymentMethod,
+          status: nextStatus,
         },
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
       console.error('Failed to pay daily payment:', error);
+      removeStoredFile(proofPath);
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException

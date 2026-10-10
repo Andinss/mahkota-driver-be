@@ -9,6 +9,7 @@ import { Driver } from '../drivers/entities/driver.entity';
 import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity';
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
+import { MethodPayment } from '../method-payment/entities/method-payment.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
       VendorVehicle,
       DriverKoin,
       KoinTransaction,
+      MethodPayment,
     ]),
   ],
   controllers: [DailyPaymentsController],
