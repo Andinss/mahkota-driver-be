@@ -10,6 +10,7 @@ import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { DriverModule } from '../drivers/driver.module';
 import { RentalsModule } from '../rentals/rentals.module';
+import { MethodPayment } from '../method-payment/entities/method-payment.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RentalsModule } from '../rentals/rentals.module';
       Driver,
       DriverKoin,
       KoinTransaction,
+      MethodPayment,
     ]),
     DriverModule,
     RentalsModule,

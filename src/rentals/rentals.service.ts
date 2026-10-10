@@ -14,6 +14,7 @@ import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
 import { FinancePayment } from '../finances/entities/finance-payment.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
+import { nextRentalNumber } from './rental-number.util';
 
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear();
@@ -164,7 +165,7 @@ export class RentalsService {
     };
   }
 
-/**
+  /**
    * Rental yang belum berhenti dan periodenya belum habis (berjalan atau
    * akan berjalan). Dipakai form rental baru untuk menyembunyikan driver dan
    * kendaraan yang masih terikat kontrak lain.
@@ -313,8 +314,18 @@ export class RentalsService {
         }
       }
 
+      // Nomor urut dihitung di sini (bukan acak) supaya RENT/2026/10/0001,
+      // 0002, 0003, ... Kunci baris sementara agar dua submit bersamaan
+      // tidak mendapat nomor yang sama.
+      await queryRunner.manager.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        [`rental-number:${new Date().getFullYear()}-${new Date().getMonth()}`],
+      );
+      const rentalNumber = await nextRentalNumber(queryRunner.manager);
+
       const rental = this.rentalsRepository.create({
         ...data,
+        rental_number: rentalNumber,
       });
       const result = await queryRunner.manager.save(rental);
 

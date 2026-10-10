@@ -26,6 +26,8 @@ import { FinanceExportDto } from './dto/finance-export.dto';
 import { CreateFinancePaymentDto } from './dto/create-finance-payment.dto';
 import { UpdateFinancePaymentDto } from './dto/update-finance-payment.dto';
 import { RentalsService } from '../rentals/rentals.service';
+import { MethodPayment } from '../method-payment/entities/method-payment.entity';
+import { removeStoredFile, toStoredPath } from '../common/proof-upload.util';
 import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
 
@@ -53,6 +55,8 @@ export class FinancesService {
     private readonly driverSaldoRepository: Repository<DriverKoin>,
     @InjectRepository(KoinTransaction)
     private readonly saldoTransactionRepository: Repository<KoinTransaction>,
+    @InjectRepository(MethodPayment)
+    private readonly methodPaymentRepository: Repository<MethodPayment>,
     private readonly rentalsService: RentalsService,
     private readonly dataSource: DataSource,
   ) {}
@@ -171,6 +175,20 @@ export class FinancesService {
       payment_method: payment.payment_method,
       payment_date: payment.payment_date,
       reference_number: payment.reference_number,
+      method_payment_id: payment.method_payment_id,
+      method_payment: payment.method_payment
+        ? {
+            id: payment.method_payment.id,
+            code: payment.method_payment.code,
+            name: payment.method_payment.name,
+            provider: payment.method_payment.provider,
+            method: payment.method_payment.method,
+            account_number: payment.method_payment.account_number,
+            account_holder: payment.method_payment.account_holder,
+          }
+        : null,
+      source_account: payment.source_account,
+      proof_image: payment.proof_image,
       notes: payment.notes,
       status: payment.status,
       created_at: payment.created_at,
@@ -1148,7 +1166,9 @@ export class FinancesService {
     financeId: string,
     dto: CreateFinancePaymentDto,
     driverId: string,
+    file?: Express.Multer.File,
   ) {
+    const proofPath = file ? toStoredPath(file) : null;
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1181,6 +1201,37 @@ export class FinancesService {
         );
       }
 
+      // --- Rekening tujuan & bukti bayar ---
+      let methodPayment: MethodPayment | null = null;
+      if (dto.method_payment_id) {
+        methodPayment = await queryRunner.manager.findOne(MethodPayment, {
+          where: { id: dto.method_payment_id },
+        });
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan tidak ditemukan');
+        }
+        if (!methodPayment.is_active) {
+          throw new BadRequestException('Rekening tujuan sudah tidak aktif');
+        }
+      }
+
+      const paymentMethod = methodPayment
+        ? methodPayment.method === 'e_wallet' || methodPayment.method === 'qris'
+          ? 'e-wallet'
+          : 'transfer'
+        : dto.payment_method;
+      const isTransferLike =
+        paymentMethod === 'transfer' || paymentMethod === 'e-wallet';
+
+      if (isTransferLike) {
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan wajib dipilih');
+        }
+        if (!proofPath) {
+          throw new BadRequestException('Bukti pembayaran wajib diunggah');
+        }
+      }
+
       const total = this.resolveTotalAmount(finance);
       const totals = this.getPaymentTotals(finance.payments);
       const remaining = Math.max(0, total - totals.paid);
@@ -1195,16 +1246,24 @@ export class FinancesService {
         );
       }
 
+      // Transfer/e-wallet -> menunggu verifikasi admin; cash/saldo -> lunas.
       const paymentStatus: 'paid' | 'pending' =
-        dto.status === 'pending' ? 'pending' : 'paid';
+        dto.status === 'paid' || dto.status === 'pending'
+          ? dto.status
+          : isTransferLike
+            ? 'pending'
+            : 'paid';
 
       const payment = queryRunner.manager.create(FinancePayment, {
         finance_id: financeId,
         driver_id: driverId,
         amount,
-        payment_method: dto.payment_method,
+        payment_method: paymentMethod,
         payment_date: new Date(dto.payment_date),
         reference_number: dto.reference_number,
+        method_payment_id: methodPayment?.id ?? null,
+        source_account: dto.source_account?.trim() || null,
+        proof_image: proofPath,
         notes: dto.notes,
         status: paymentStatus,
       });
@@ -1244,6 +1303,7 @@ export class FinancesService {
     } catch (error) {
       await queryRunner.rollbackTransaction();
       console.error('Failed to create driver payment:', error);
+      removeStoredFile(proofPath);
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
@@ -1267,6 +1327,7 @@ export class FinancesService {
 
     const payments = await this.financePaymentRepository.find({
       where: { finance_id: financeId },
+      relations: { method_payment: true },
       order: {
         payment_date: 'ASC',
         created_at: 'ASC',
