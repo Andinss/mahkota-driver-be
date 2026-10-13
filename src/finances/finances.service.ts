@@ -191,6 +191,7 @@ export class FinancesService {
       proof_image: payment.proof_image,
       notes: payment.notes,
       status: payment.status,
+      rejection_reason: payment.rejection_reason,
       created_at: payment.created_at,
       updated_at: payment.updated_at,
     };
@@ -205,7 +206,23 @@ export class FinancesService {
     const total = this.resolveTotalAmount(finance);
     const paidAmount = Math.min(t.paid, total);
     const remainingAmount = Math.max(0, total - paidAmount);
-    const status = this.deriveStatus(total, t.paid, t.pending, finance.status);
+    let status = this.deriveStatus(total, t.paid, t.pending, finance.status);
+
+    // Pembayaran terakhir ditolak admin dan belum ada pembayaran yang berhasil
+    // -> tampilkan sebagai 'rejected' supaya driver tahu harus mengajukan ulang.
+    const rejectedPayments = (finance.payments || [])
+      .filter((p) => p.status === 'cancelled')
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    const lastRejected = rejectedPayments[rejectedPayments.length - 1];
+    const hasPaidPayment = (finance.payments || []).some(
+      (p) => p.status === 'paid',
+    );
+    if (status === 'unpaid' && !hasPaidPayment && lastRejected) {
+      status = 'rejected';
+    }
 
     const rentals = finance.rentals || [];
     const firstRental = rentals[0];
@@ -231,6 +248,7 @@ export class FinancesService {
       fee_admin_join: Number(finance.fee_admin_join) || 0,
       fee_kind: finance.fee_kind || 'admin_join',
       paid_amount: paidAmount,
+      pending_amount: t.pending,
       remaining_amount: remainingAmount,
       payments_count:
         finance.payments?.length ?? (typeof t.count === 'number' ? t.count : 0),
@@ -654,6 +672,8 @@ export class FinancesService {
         .leftJoinAndSelect('f.rentals', 'rentals')
         .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
         .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+        .leftJoinAndSelect('f.payments', 'payments')
+        .leftJoinAndSelect('payments.method_payment', 'payment_method')
         .whereInIds(pageIds)
         .orderBy('f.created_at', 'DESC')
         .getMany();
@@ -1201,6 +1221,17 @@ export class FinancesService {
         );
       }
 
+      // Sudah ada pembayaran menunggu verifikasi admin — driver tidak boleh
+      // mengirim pembayaran baru sampai pembayaran tersebut diverifikasi.
+      const hasPendingPayment = (finance.payments || []).some(
+        (p) => p.status === 'pending',
+      );
+      if (hasPendingPayment) {
+        throw new BadRequestException(
+          'Pembayaran sudah dikonfirmasi dan sedang menunggu verifikasi admin',
+        );
+      }
+
       // --- Rekening tujuan & bukti bayar ---
       let methodPayment: MethodPayment | null = null;
       if (dto.method_payment_id) {
@@ -1374,6 +1405,9 @@ export class FinancesService {
       }
 
       payment.status = dto.status;
+      // Alasan penolakan hanya relevan saat `cancelled`; di status lain dibersihkan.
+      payment.rejection_reason =
+        dto.status === 'cancelled' ? dto.reason?.trim() || null : null;
       await queryRunner.manager.save(payment);
 
       if (dto.status === 'paid') {
@@ -1523,6 +1557,8 @@ export class FinancesService {
         .leftJoinAndSelect('f.rentals', 'rentals')
         .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
         .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+        .leftJoinAndSelect('f.payments', 'payments')
+        .leftJoinAndSelect('payments.method_payment', 'payment_method')
         .whereInIds(pageIds)
         .orderBy('f.created_at', 'DESC')
         .getMany();
@@ -1561,6 +1597,8 @@ export class FinancesService {
       .leftJoinAndSelect('f.rentals', 'rentals')
       .leftJoinAndSelect('rentals.vehicle', 'rental_vehicle')
       .leftJoinAndSelect('rental_vehicle.vendor', 'rental_vehicle_vendor')
+      .leftJoinAndSelect('f.payments', 'payments')
+      .leftJoinAndSelect('payments.method_payment', 'payment_method')
       .where('f.driver_id = :driverId', { driverId })
       .andWhere('f.fee_admin_join > 0')
       .andWhere('f.is_active = :isActive', { isActive: true })
