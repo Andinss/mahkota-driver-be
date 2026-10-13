@@ -73,6 +73,10 @@ export class FinancePayment {
   @Column({ type: 'varchar', length: 50, default: 'pending' })
   status!: string;
 
+  /** Alasan penolakan pembayaran oleh admin (status `cancelled`). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  rejection_reason!: string | null;
+
   @CreateDateColumn()
   created_at!: Date;
 
