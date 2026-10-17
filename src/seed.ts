@@ -81,6 +81,9 @@ const rolesData: RoleSeed[] = [
         'rental.create',
         'koin.read',
         'koin.top_up',
+        'finance.read',
+        'late_payment.read',
+        'late_payment.approve',
       ];
       return perms.includes(name);
     },
@@ -96,6 +99,8 @@ const rolesData: RoleSeed[] = [
         'finance.update',
         'finance.approve',
         'rental.read',
+        'late_payment.read',
+        'late_payment.approve',
       ];
       return perms.includes(name);
     },

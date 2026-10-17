@@ -33,6 +33,17 @@ export class LatePayment {
   @Column({ type: 'varchar', length: 50, nullable: true })
   plate!: string;
 
+  /**
+   * Tagihan harian (daily_payments) yang diizinkan telat. Izin melekat pada
+   * satu tanggal/tagihan saja. Null untuk pengajuan lama berbasis rental.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  daily_payment_id!: string | null;
+
+  /** Jumlah hari keterlambatan saat pengajuan (jejak audit). */
+  @Column({ type: 'int', default: 0 })
+  late_days!: number;
+
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   amount!: number;
 

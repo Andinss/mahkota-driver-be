@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, QueryRunner } from 'typeorm';
+import { Repository, DataSource, QueryRunner, In } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { DailyPayment } from './entities/daily-payment.entity';
 import { Rental } from '../rentals/entities/rental.entity';
@@ -16,6 +16,7 @@ import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { PayDailyPaymentDto } from './dto/pay-daily-payment.dto';
 import { MethodPayment } from '../method-payment/entities/method-payment.entity';
+import { LatePayment } from '../late-payments/entities/late-payment.entity';
 import { removeStoredFile, toStoredPath } from '../common/proof-upload.util';
 
 function toLocalDateString(date: Date): string {
@@ -43,6 +44,8 @@ export class DailyPaymentsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(VendorVehicle)
     private readonly vendorRepository: Repository<VendorVehicle>,
+    @InjectRepository(LatePayment)
+    private readonly latePaymentRepository: Repository<LatePayment>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -302,10 +305,48 @@ export class DailyPaymentsService {
       updated_at: dp.updated_at,
     }));
 
+    const ids = items.map((i) => i.id);
+    const izins = ids.length
+      ? await this.latePaymentRepository.find({
+          where: { daily_payment_id: In(ids) },
+        })
+      : [];
+    const izinByDp = new Map<string, LatePayment>();
+    for (const izin of izins) {
+      if (!izin.daily_payment_id) continue;
+      const prev = izinByDp.get(izin.daily_payment_id);
+      if (!prev || (prev.status === 'rejected' && izin.status !== 'rejected')) {
+        izinByDp.set(izin.daily_payment_id, izin);
+      }
+    }
+
     return {
       success: true,
       message: 'Driver daily payments retrieved successfully',
-      data: items,
+      data: items.map((item) => {
+        const izin = izinByDp.get(item.id);
+        return {
+          ...item,
+          izin_id: izin?.id ?? null,
+          izin_status: izin?.status ?? null,
+          izin: izin
+            ? {
+                id: izin.id,
+                status: izin.status,
+                late_days: izin.late_days,
+                justification: izin.justification,
+                justification_reason: izin.justification_reason,
+                message: izin.message,
+                admin_note: izin.admin_note,
+                due_date: izin.due_date,
+                amount: Number(izin.amount),
+                payment_date: izin.payment_date,
+                created_at: izin.created_at,
+                updated_at: izin.updated_at,
+              }
+            : null,
+        };
+      }),
       meta: {
         total,
         page,

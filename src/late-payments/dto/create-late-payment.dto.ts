@@ -2,7 +2,6 @@ import {
   IsString,
   IsDateString,
   IsOptional,
-  IsNotEmpty,
   IsNumber,
   IsUUID,
   IsArray,
@@ -10,33 +9,38 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateLatePaymentDto {
-  @IsUUID()
-  @IsNotEmpty()
-  driver_id!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  driver_name!: string;
-
-  @IsString()
   @IsOptional()
+  @IsUUID()
+  driver_id?: string;
+
+  @IsOptional()
+  @IsString()
+  driver_name?: string;
+
+  @IsOptional()
+  @IsString()
   vehicle?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   plate?: string;
 
-  @IsNumber()
-  @IsNotEmpty()
-  @Type(() => Number)
-  amount!: number;
-
-  @IsDateString()
-  @IsNotEmpty()
-  due_date!: string;
-
-  @IsDateString()
+  /** Tagihan harian yang diajukan izin telat (menentukan due_date & amount). */
   @IsOptional()
+  @IsUUID()
+  daily_payment_id?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  amount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  due_date?: string;
+
+  @IsOptional()
+  @IsDateString()
   payment_date?: string;
 
   @IsOptional()
