@@ -10,6 +10,7 @@ import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity'
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { MethodPayment } from '../method-payment/entities/method-payment.entity';
+import { LatePayment } from '../late-payments/entities/late-payment.entity';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { MethodPayment } from '../method-payment/entities/method-payment.entity'
       DriverKoin,
       KoinTransaction,
       MethodPayment,
+      LatePayment,
     ]),
   ],
   controllers: [DailyPaymentsController],
