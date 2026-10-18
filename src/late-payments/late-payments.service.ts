@@ -11,6 +11,7 @@ import { CreateLatePaymentDto } from './dto/create-late-payment.dto';
 import { CreateMyLatePaymentDto } from './dto/create-my-late-payment.dto';
 import { FinancesService } from '../finances/finances.service';
 import { DailyPayment } from '../daily-payments/entities/daily-payment.entity';
+import { toStoredPath } from '../common/proof-upload.util';
 import type { Rental } from '../rentals/entities/rental.entity';
 
 function startOfToday(): Date {
@@ -149,7 +150,11 @@ export class LatePaymentsService {
    * Pengajuan izin telat bayar oleh driver untuk satu tagihan harian.
    * Data driver/kendaraan/nominal/tanggal diambil dari tagihan harian.
    */
-  async createForDriver(data: CreateMyLatePaymentDto, driverId: string) {
+  async createForDriver(
+    data: CreateMyLatePaymentDto,
+    driverId: string,
+    file?: Express.Multer.File,
+  ) {
     const daily = await this.dailyPaymentRepository.findOne({
       where: { id: data.daily_payment_id },
       relations: { vehicle: true, driver: true },
@@ -204,6 +209,7 @@ export class LatePaymentsService {
       justification: data.justification?.trim() || 'Izin telat bayar',
       justification_reason: data.justification?.trim(),
       message: data.message?.trim(),
+      proof_image: file ? toStoredPath(file) : undefined,
       status: 'pending',
     });
 
