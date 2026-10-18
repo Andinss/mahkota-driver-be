@@ -8,8 +8,11 @@ import {
   Query,
   Req,
   BadRequestException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { LatePaymentsService } from './late-payments.service';
 import { ApproveRejectDto } from './dto/approve-reject.dto';
 import { CreateLatePaymentDto } from './dto/create-late-payment.dto';
@@ -17,6 +20,8 @@ import { CreateMyLatePaymentDto } from './dto/create-my-late-payment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
+import { proofImageUpload } from '../common/proof-upload.util';
+import { ProofCleanupInterceptor } from '../common/proof-cleanup.interceptor';
 
 interface AuthedRequest {
   user?: { driver?: { id?: string }; driver_id?: string };
@@ -36,12 +41,20 @@ export class LatePaymentsController {
   /** Pengajuan izin telat bayar oleh driver (per tagihan harian). */
   @Post('my')
   @Permissions('finance.create')
-  createMine(@Body() dto: CreateMyLatePaymentDto, @Req() req: AuthedRequest) {
+  @UseInterceptors(
+    FileInterceptor('proof_image', proofImageUpload),
+    new ProofCleanupInterceptor(),
+  )
+  createMine(
+    @Body() dto: CreateMyLatePaymentDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthedRequest,
+  ) {
     const driverId = req.user?.driver?.id || req.user?.driver_id;
     if (!driverId) {
       throw new BadRequestException('No driver profile linked to this account');
     }
-    return this.latePaymentsService.createForDriver(dto, driverId);
+    return this.latePaymentsService.createForDriver(dto, driverId, file);
   }
 
   @Get()

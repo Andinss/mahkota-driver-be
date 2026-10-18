@@ -338,6 +338,7 @@ export class DailyPaymentsService {
                 justification_reason: izin.justification_reason,
                 message: izin.message,
                 admin_note: izin.admin_note,
+                proof_image: izin.proof_image,
                 due_date: izin.due_date,
                 amount: Number(izin.amount),
                 payment_date: izin.payment_date,
