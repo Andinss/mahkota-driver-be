@@ -30,6 +30,7 @@ import { DailyPaymentsModule } from './daily-payments/daily-payments.module';
 import { MembershipModule } from './membership/membership.module';
 import { MethodPaymentModule } from './method-payment/method-payment.module';
 import { RentalContractModule } from './rental-contract/rental-contract.module';
+import { OutTownModule } from './out-town/out-town.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -81,6 +82,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     MembershipModule,
     MethodPaymentModule,
     RentalContractModule,
+    OutTownModule,
   ],
   controllers: [AppController, VehicleAssignmentController],
   providers: [

@@ -35,6 +35,7 @@ const modulePermissions: Record<string, string[]> = {
   rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
   finance: ['create', 'read', 'update', 'delete', 'approve'],
   late_payment: ['read', 'approve'],
+  out_of_town: ['create', 'read', 'approve'],
   monitoring: ['read', 'read.all', 'update'],
   koin: ['read', 'top_up', 'deduct', 'refund'],
   setting: ['create', 'read', 'update', 'delete'],
@@ -84,6 +85,8 @@ const rolesData: RoleSeed[] = [
         'finance.read',
         'late_payment.read',
         'late_payment.approve',
+        'out_of_town.read',
+        'out_of_town.approve',
       ];
       return perms.includes(name);
     },
@@ -118,6 +121,8 @@ const rolesData: RoleSeed[] = [
         'monitoring.read',
         'monitoring.read.all',
         'monitoring.update',
+        'out_of_town.read',
+        'out_of_town.approve',
       ];
       return perms.includes(name);
     },
@@ -136,6 +141,8 @@ const rolesData: RoleSeed[] = [
         'driver_portal.dashboard',
         'driver_portal.payment',
         'driver_portal.profile',
+        'out_of_town.create',
+        'out_of_town.read',
       ];
       return perms.includes(name);
     },
