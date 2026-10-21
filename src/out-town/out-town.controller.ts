@@ -52,6 +52,21 @@ export class OutOfTownController {
     return this.outOfTownService.listMine(driverId);
   }
 
+  /** Statistik pengajuan milik driver yang login. */
+  @Get('my/stats')
+  @Permissions('out_of_town.read')
+  getMyStats(@Req() req: AuthedRequest) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return {
+        success: true,
+        message: 'No driver',
+        data: { pending: 0, approved: 0, rejected: 0, total: 0 },
+      };
+    }
+    return this.outOfTownService.getStats(driverId);
+  }
+
   @Get()
   @Permissions('out_of_town.read')
   findAll(@Query('status') status?: string) {
@@ -77,7 +92,12 @@ export class OutOfTownController {
     @Body() dto: ApproveRejectDto,
     @Req() req: AuthedRequest,
   ) {
-    return this.outOfTownService.approve(id, dto.admin_note, req.user?.id);
+    return this.outOfTownService.approve(
+      id,
+      dto.admin_note,
+      req.user?.id,
+      dto.fee_amount,
+    );
   }
 
   @Post(':id/reject')
