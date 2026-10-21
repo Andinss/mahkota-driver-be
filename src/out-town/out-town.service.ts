@@ -10,6 +10,7 @@ import { OutOfTownRequest } from './entities/out-of-town-request.entity';
 import { CreateMyOutOfTownDto } from './dto/create-my-out-of-town.dto';
 import { Driver } from '../drivers/entities/driver.entity';
 import { Rental } from '../rentals/entities/rental.entity';
+import { DailyPaymentsService } from '../daily-payments/daily-payments.service';
 
 const ALLOWED_STATUS = ['pending', 'approved', 'rejected'];
 
@@ -42,6 +43,7 @@ export class OutOfTownService {
     private readonly driverRepository: Repository<Driver>,
     @InjectRepository(Rental)
     private readonly rentalRepository: Repository<Rental>,
+    private readonly dailyPaymentsService: DailyPaymentsService,
   ) {}
 
   private async findRawById(id: string): Promise<OutOfTownRequest | null> {
@@ -126,6 +128,7 @@ export class OutOfTownService {
         vehicle_id: vehicle.id,
         vehicle_name: `${vehicle.merk} ${vehicle.model}`.trim(),
         vehicle_plate: vehicle.license_plate,
+        rental_id: rental.id,
         destination: data.destination.trim(),
         departure_date: new Date(departure),
         return_date: new Date(ret),
@@ -178,12 +181,23 @@ export class OutOfTownService {
     };
   }
 
-  async getStats() {
+  /**
+   * Statistik pengajuan. Bila `driverId` diberikan, hanya menghitung
+   * pengajuan milik driver tsb (dipakai halaman driver).
+   */
+  async getStats(driverId?: string) {
+    const where = driverId ? { driver_id: driverId } : {};
     const [pending, approved, rejected, total] = await Promise.all([
-      this.requestRepository.count({ where: { status: 'pending' } }),
-      this.requestRepository.count({ where: { status: 'approved' } }),
-      this.requestRepository.count({ where: { status: 'rejected' } }),
-      this.requestRepository.count(),
+      this.requestRepository.count({
+        where: { ...where, status: 'pending' },
+      }),
+      this.requestRepository.count({
+        where: { ...where, status: 'approved' },
+      }),
+      this.requestRepository.count({
+        where: { ...where, status: 'rejected' },
+      }),
+      this.requestRepository.count({ where }),
     ]);
 
     return {
@@ -205,8 +219,13 @@ export class OutOfTownService {
     };
   }
 
-  async approve(id: string, adminNote?: string, reviewedBy?: string) {
-    return this.setStatus(id, 'approved', adminNote, reviewedBy);
+  async approve(
+    id: string,
+    adminNote?: string,
+    reviewedBy?: string,
+    feeAmount?: number,
+  ) {
+    return this.setStatus(id, 'approved', adminNote, reviewedBy, feeAmount);
   }
 
   async reject(id: string, adminNote?: string, reviewedBy?: string) {
@@ -218,6 +237,7 @@ export class OutOfTownService {
     status: string,
     adminNote?: string,
     reviewedBy?: string,
+    feeAmount?: number,
   ): Promise<OutOfTownResponse> {
     const request = await this.findRawById(id);
     if (!request) {
@@ -230,6 +250,13 @@ export class OutOfTownService {
     request.reviewed_at = new Date();
 
     const result = await this.requestRepository.save(request);
+
+    // Biaya tambahan (nominal bebas dari admin) hanya dikenakan saat
+    // pengajuan DISETUJUI dan nominalnya > 0.
+    if (status === 'approved' && feeAmount && feeAmount > 0) {
+      await this.applyFee(request, feeAmount);
+    }
+
     const saved = await this.findRawById(result.id);
 
     return {
@@ -242,14 +269,144 @@ export class OutOfTownService {
     };
   }
 
+  /**
+   * Masukkan biaya tambahan ke daily payment pada tanggal keberangkatan
+   * dan simpan jejaknya di pengajuan (untuk pembatalan).
+   */
+  private async applyFee(
+    request: OutOfTownRequest,
+    feeAmount: number,
+  ): Promise<void> {
+    try {
+      const rental = await this.resolveRental(request);
+      if (!rental) {
+        console.warn(
+          `Out of town ${request.id}: rental tidak ditemukan, biaya tambahan dilewati`,
+        );
+        return;
+      }
+
+      const paymentDate = toDateOnly(request.departure_date);
+      const note = `Biaya izin luar kota: ${request.destination} (Rp ${feeAmount.toLocaleString('id-ID')})`;
+
+      const payment = await this.dailyPaymentsService.addOutOfTownFee({
+        rentalId: rental.id,
+        driverId: request.driver_id,
+        vehicleId: request.vehicle_id || rental.vehicle_id,
+        paymentDate,
+        fee: feeAmount,
+        note,
+      });
+
+      request.rental_id = rental.id;
+      request.fee_amount = feeAmount;
+      request.daily_payment_id = payment?.id ?? null;
+      await this.requestRepository.save(request);
+    } catch (error) {
+      console.error(
+        `Failed to apply out of town fee for request ${request.id}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Rental yang mendasari pengajuan: pakai `rental_id` yang tersimpan,
+   * atau cari rental aktif driver yang mencakup tanggal keberangkatan
+   * (untuk data lama yang belum menyimpan rental_id).
+   */
+  private async resolveRental(
+    request: OutOfTownRequest,
+  ): Promise<Rental | null> {
+    if (request.rental_id) {
+      const linked = await this.rentalRepository.findOne({
+        where: { id: request.rental_id },
+      });
+      if (linked) return linked;
+    }
+
+    const departure = toDateOnly(request.departure_date);
+    const rentals = await this.rentalRepository.find({
+      where: {
+        driver_id: request.driver_id,
+        status: 'active',
+        start_date: LessThanOrEqual(departure as unknown as Date),
+        end_date: MoreThanOrEqual(departure as unknown as Date),
+      },
+      order: { start_date: 'DESC' },
+    });
+
+    if (request.vehicle_id) {
+      const match = rentals.find((r) => r.vehicle_id === request.vehicle_id);
+      if (match) return match;
+    }
+    return rentals[0] || null;
+  }
+
   async delete(id: string): Promise<{ success: boolean; message: string }> {
-    const result = await this.requestRepository.delete(id);
-    if (result.affected === 0) {
+    const request = await this.requestRepository.findOne({ where: { id } });
+    if (!request) {
       throw new NotFoundException('Pengajuan keluar kota tidak ditemukan');
     }
+
+    // Batalkan biaya tambahan bila pengajuan yang dihapus sudah disetujui.
+    if (request.status === 'approved' && request.fee_amount) {
+      try {
+        const note = `Biaya izin luar kota: ${request.destination} (Rp ${Number(
+          request.fee_amount,
+        ).toLocaleString('id-ID')})`;
+        if (request.daily_payment_id) {
+          await this.dailyPaymentsService.removeOutOfTownFee(
+            request.daily_payment_id,
+            Number(request.fee_amount),
+            note,
+          );
+        } else {
+          // Jejak daily payment tidak tersimpan (data lama): cari baris
+          // pada tanggal keberangkatan untuk mengurangi biaya.
+          const rental = await this.resolveRental(request);
+          if (rental) {
+            await this.findAndRemoveFee(
+              rental.id,
+              toDateOnly(request.departure_date),
+              Number(request.fee_amount),
+              note,
+            );
+          }
+        }
+      } catch (error) {
+        console.error(
+          `Failed to reverse out of town fee for request ${request.id}:`,
+          error,
+        );
+      }
+    }
+
+    await this.requestRepository.delete(id);
     return {
       success: true,
       message: 'Pengajuan keluar kota dihapus',
     };
+  }
+
+  /** Cari baris daily payment pada tanggal tertentu lalu kurangi biayanya. */
+  private async findAndRemoveFee(
+    rentalId: string,
+    paymentDate: string,
+    fee: number,
+    note: string,
+  ): Promise<void> {
+    const payment = await this.requestRepository.manager
+      .createQueryBuilder()
+      .select('dp.id', 'id')
+      .from('daily_payments', 'dp')
+      .where('dp.rental_id = :rentalId', { rentalId })
+      .andWhere('dp.payment_date = :paymentDate', { paymentDate })
+      .orderBy('dp.created_at', 'ASC')
+      .getRawOne<{ id: string }>();
+
+    if (payment?.id) {
+      await this.dailyPaymentsService.removeOutOfTownFee(payment.id, fee, note);
+    }
   }
 }

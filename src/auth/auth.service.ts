@@ -145,6 +145,10 @@ export class AuthService {
       })
       .catch(() => {});
 
+    const driverName = user.driver
+      ? `${user.driver.first_name ?? ''} ${user.driver.last_name ?? ''}`.trim()
+      : '';
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -152,6 +156,7 @@ export class AuthService {
         username: user.username,
         email: user.email,
         driver_id: user.driver?.id || user.driver_id || null,
+        driver_name: driverName || null,
         role: user.role
           ? {
               id: user.role.id,
@@ -448,11 +453,16 @@ export class AuthService {
       },
     });
 
+    const driverName = profile?.driver
+      ? `${profile.driver.first_name ?? ''} ${profile.driver.last_name ?? ''}`.trim()
+      : '';
+
     return {
       id: profile?.id,
       username: profile?.username,
       email: profile?.email,
       driver_id: profile?.driver?.id || profile?.driver_id || null,
+      driver_name: driverName || null,
       role: profile?.role
         ? {
             id: profile.role.id,

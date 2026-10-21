@@ -98,20 +98,7 @@ export class DailyPaymentsService {
         const rentalNumber =
           rental.rental_number || `RENT-${rental.id.slice(0, 8)}`;
 
-        const now = new Date();
-        const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const lastPayment = await this.dailyPaymentsRepository
-          .createQueryBuilder('dp')
-          .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ym}/%` })
-          .orderBy('dp.reference_number', 'DESC')
-          .getOne();
-        let seq = 1;
-        if (lastPayment) {
-          const parts = lastPayment.reference_number.split('/');
-          const lastNum = parseInt(parts[parts.length - 1], 10);
-          if (!isNaN(lastNum)) seq = lastNum + 1;
-        }
-        const refNumber = `PAY-${ym}/${String(seq).padStart(4, '0')}`;
+        const refNumber = await this.nextReferenceNumber();
 
         const dailyPayment = this.dailyPaymentsRepository.create({
           rental_id: rental.id,
@@ -134,6 +121,153 @@ export class DailyPaymentsService {
     } catch (error) {
       this.logger.error('Failed to generate daily payments:', error);
     }
+  }
+
+  /** Nomor referensi berikutnya dengan format PAY-YYYY/MM/NNNN. */
+  private async nextReferenceNumber(): Promise<string> {
+    const now = new Date();
+    const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastPayment = await this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ym}/%` })
+      .orderBy('dp.reference_number', 'DESC')
+      .getOne();
+
+    let seq = 1;
+    if (lastPayment?.reference_number) {
+      const parts = lastPayment.reference_number.split('/');
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) seq = lastNum + 1;
+    }
+    return `PAY-${ym}/${String(seq).padStart(4, '0')}`;
+  }
+
+  /**
+   * Menambahkan biaya tambahan (mis. izin keluar kota) ke daily payment
+   * pada tanggal tertentu.
+   *
+   * - Bila baris daily payment tanggal tsb belum ada (approve dilakukan
+   *   sebelum cron harian berjalan), dibuat baris baru dengan
+   *   `amount = daily_rate + fee` agar tarif harian tidak hilang.
+   * - Bila baris sudah ada dan belum lunas, `amount` ditambah `fee`.
+   * - Bila baris sudah LUNAS, dibuat baris terpisah sebesar `fee` supaya
+   *   driver tetap membayar biaya tambahannya.
+   *
+   * @returns Baris daily payment yang menampung biaya (null bila dilewati).
+   */
+  async addOutOfTownFee(params: {
+    rentalId: string;
+    driverId: string;
+    vehicleId: string;
+    paymentDate: string;
+    fee: number;
+    note: string;
+  }): Promise<DailyPayment | null> {
+    const { rentalId, driverId, vehicleId, paymentDate, fee, note } = params;
+    if (!fee || fee <= 0) return null;
+
+    const existing = await this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .where('dp.rental_id = :rentalId', { rentalId })
+      .andWhere('dp.payment_date = :paymentDate', { paymentDate })
+      .orderBy('dp.created_at', 'ASC')
+      .getOne();
+
+    if (existing && existing.status === 'paid') {
+      // Sudah lunas: buat baris terpisah khusus biaya tambahan.
+      const separate = this.dailyPaymentsRepository.create({
+        rental_id: rentalId,
+        driver_id: driverId,
+        vehicle_id: vehicleId,
+        payment_date: paymentDate,
+        amount: fee,
+        status: 'unpaid',
+        reference_number: await this.nextReferenceNumber(),
+        notes: note,
+      });
+      const savedSeparate = await this.dailyPaymentsRepository.save(separate);
+      this.logger.log(
+        `Added separate out-of-town fee Rp ${fee} for rental ${rentalId} ${paymentDate}`,
+      );
+      return savedSeparate;
+    }
+
+    if (existing) {
+      existing.amount = Number(existing.amount) + fee;
+      existing.notes = this.appendNote(existing.notes, note);
+      const saved = await this.dailyPaymentsRepository.save(existing);
+      this.logger.log(
+        `Added out-of-town fee Rp ${fee} to daily payment ${existing.id}`,
+      );
+      return saved;
+    }
+
+    // Belum ada baris untuk tanggal tsb → buat dengan tarif harian + biaya.
+    const rental = await this.rentalsRepository.findOne({
+      where: { id: rentalId },
+    });
+    const dailyAmount = Number(rental?.daily_rate) || 0;
+    const rentalNumber =
+      rental?.rental_number || `RENT-${rentalId.slice(0, 8)}`;
+
+    const created = this.dailyPaymentsRepository.create({
+      rental_id: rentalId,
+      driver_id: driverId,
+      vehicle_id: vehicleId,
+      payment_date: paymentDate,
+      amount: dailyAmount + fee,
+      status: 'unpaid',
+      reference_number: await this.nextReferenceNumber(),
+      notes: this.appendNote(`Daily payment for rental ${rentalNumber}`, note),
+    });
+    const savedCreated = await this.dailyPaymentsRepository.save(created);
+    this.logger.log(
+      `Created daily payment with out-of-town fee Rp ${fee} for rental ${rentalId} ${paymentDate}`,
+    );
+    return savedCreated;
+  }
+
+  /**
+   * Mengurangi kembali biaya tambahan dari daily payment (dipakai saat
+   * pengajuan yang sudah disetujui dibatalkan/dihapus). Bila `amount`
+   * menjadi 0 dan baris masih `unpaid`, baris tersebut dihapus.
+   */
+  async removeOutOfTownFee(
+    dailyPaymentId: string,
+    fee: number,
+    note?: string,
+  ): Promise<void> {
+    const payment = await this.dailyPaymentsRepository.findOne({
+      where: { id: dailyPaymentId },
+    });
+    if (!payment || !fee || fee <= 0) return;
+
+    const remaining = Number(payment.amount) - fee;
+
+    if (remaining <= 0 && payment.status === 'unpaid') {
+      await this.dailyPaymentsRepository.delete(payment.id);
+      this.logger.log(
+        `Deleted daily payment ${payment.id} after removing out-of-town fee`,
+      );
+      return;
+    }
+
+    payment.amount = Math.max(remaining, 0);
+    if (note) {
+      payment.notes =
+        (payment.notes || '').replace(note, '').trim() || payment.notes;
+    }
+    await this.dailyPaymentsRepository.save(payment);
+    this.logger.log(
+      `Removed out-of-town fee Rp ${fee} from daily payment ${payment.id}`,
+    );
+  }
+
+  /** Gabungkan catatan lama dengan catatan biaya tambahan (maks 500 char). */
+  private appendNote(base: string | null, extra: string): string {
+    const trimmedBase = (base || '').trim();
+    const combined = trimmedBase ? `${trimmedBase}; ${extra}` : extra;
+    return combined.slice(0, 500);
   }
 
   async getDailyPayments(query?: {

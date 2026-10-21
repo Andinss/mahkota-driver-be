@@ -6,10 +6,12 @@ import { OutOfTownRequest } from './entities/out-of-town-request.entity';
 import { Driver } from '../drivers/entities/driver.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Rental } from '../rentals/entities/rental.entity';
+import { DailyPaymentsModule } from '../daily-payments/daily-payments.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([OutOfTownRequest, Driver, Vehicle, Rental]),
+    DailyPaymentsModule,
   ],
   controllers: [OutOfTownController],
   providers: [OutOfTownService],
