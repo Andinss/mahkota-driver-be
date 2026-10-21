@@ -2,12 +2,15 @@ import { existsSync, unlinkSync } from 'fs';
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Cron } from '@nestjs/schedule';
+import { Repository, DataSource, In } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
@@ -28,7 +31,9 @@ import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
-export class RentalsService {
+export class RentalsService implements OnModuleInit {
+  private readonly logger = new Logger(RentalsService.name);
+
   constructor(
     @InjectRepository(Rental)
     private readonly rentalsRepository: Repository<Rental>,
@@ -40,6 +45,65 @@ export class RentalsService {
     private readonly financePaymentRepository: Repository<FinancePayment>,
     private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * Sinkronisasi sekali saat boot. Kalau server mati ketika cron harian
+   * berjalan, status kendaraan bisa tertahan di 'rented'; ini merapikannya
+   * tanpa harus menunggu tengah malam.
+   */
+  async onModuleInit() {
+    try {
+      await this.releaseVehiclesFromFinishedRentals();
+    } catch (error) {
+      this.logger.error(
+        'Failed to sync vehicle availability on startup',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Mengembalikan kendaraan ke 'Available' bila tidak ada lagi rental aktif
+   * yang mencakup hari ini.
+   *
+   * Rental yang sudah lewat tanggal akhir tetap tersimpan dengan status
+   * 'active' (lihat komentar Rental.status), sedangkan kendaraan baru
+   * dikembalikan ke 'Available' saat rental di-stop manual. Tanpa job ini
+   * kendaraan yang kontraknya habis normal akan tertahan 'rented' selamanya.
+   * Syaratnya sengaja dibuat sama dengan pengecekan di stop().
+   */
+  @Cron('10 0 * * *')
+  async releaseVehiclesFromFinishedRentals(): Promise<number> {
+    const todayStr = toLocalDateString(new Date());
+
+    const strandedVehicles = await this.vehiclesRepository
+      .createQueryBuilder('v')
+      .leftJoin(
+        Rental,
+        'r',
+        'r.vehicle_id = v.id AND r.status = :activeStatus AND r.end_date >= :today',
+        { activeStatus: 'active', today: todayStr },
+      )
+      .select('v.id', 'id')
+      .where('v.status = :rentedStatus', { rentedStatus: 'rented' })
+      .andWhere('r.id IS NULL')
+      .getRawMany<{ id: string }>();
+
+    if (strandedVehicles.length === 0) {
+      return 0;
+    }
+
+    await this.vehiclesRepository.update(
+      { id: In(strandedVehicles.map((item) => item.id)) },
+      { status: 'Available' },
+    );
+
+    this.logger.log(
+      `Released ${strandedVehicles.length} vehicle(s) to Available (rental period ended)`,
+    );
+
+    return strandedVehicles.length;
+  }
 
   async findAll(query?: RentalQueryDto) {
     const page = query?.page || 1;

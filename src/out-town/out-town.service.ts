@@ -5,13 +5,27 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, LessThanOrEqual, Repository } from 'typeorm';
 import { OutOfTownRequest } from './entities/out-of-town-request.entity';
 import { CreateMyOutOfTownDto } from './dto/create-my-out-of-town.dto';
 import { Driver } from '../drivers/entities/driver.entity';
-import { Vehicle } from '../vehicles/entities/vehicle.entity';
+import { Rental } from '../rentals/entities/rental.entity';
 
 const ALLOWED_STATUS = ['pending', 'approved', 'rejected'];
+
+/** Tanggal hari ini sebagai YYYY-MM-DD (zona waktu lokal server). */
+function todayStr(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Ambil bagian YYYY-MM-DD dari nilai date/timestamp. */
+function toDateOnly(value: Date | string): string {
+  return String(value).slice(0, 10);
+}
 
 type OutOfTownResponse = {
   success: boolean;
@@ -26,8 +40,8 @@ export class OutOfTownService {
     private readonly requestRepository: Repository<OutOfTownRequest>,
     @InjectRepository(Driver)
     private readonly driverRepository: Repository<Driver>,
-    @InjectRepository(Vehicle)
-    private readonly vehicleRepository: Repository<Vehicle>,
+    @InjectRepository(Rental)
+    private readonly rentalRepository: Repository<Rental>,
   ) {}
 
   private async findRawById(id: string): Promise<OutOfTownRequest | null> {
@@ -39,7 +53,8 @@ export class OutOfTownService {
 
   /**
    * Pengajuan izin keluar kota oleh driver. Nama & telepon diambil dari
-   * profil driver yang login, detail kendaraan dari master kendaraan.
+   * profil driver yang login; kendaraan ditentukan otomatis dari rental
+   * aktif milik driver (satu kontrak = satu kendaraan), bukan dipilih manual.
    */
   async createForDriver(
     data: CreateMyOutOfTownDto,
@@ -52,18 +67,51 @@ export class OutOfTownService {
       throw new NotFoundException('Profil driver tidak ditemukan');
     }
 
-    const vehicle = await this.vehicleRepository.findOne({
-      where: { id: data.vehicle_id },
+    // Satu driver hanya boleh punya satu pengajuan yang belum diproses.
+    const pending = await this.requestRepository.findOne({
+      where: { driver_id: driverId, status: 'pending' },
     });
-    if (!vehicle) {
-      throw new NotFoundException('Kendaraan tidak ditemukan');
+    if (pending) {
+      throw new BadRequestException(
+        'Masih ada pengajuan luar kota yang menunggu persetujuan',
+      );
     }
 
-    const departure = new Date(data.departure_date);
-    const ret = new Date(data.return_date);
-    if (ret.getTime() < departure.getTime()) {
+    // Rental yang masih berlaku hari ini (definisi sama dengan generator
+    // tagihan harian): status active dan tanggal hari ini dalam rentang.
+    const today = todayStr();
+    const rentals = await this.rentalRepository.find({
+      where: {
+        driver_id: driverId,
+        status: 'active',
+        start_date: LessThanOrEqual(today as unknown as Date),
+        end_date: MoreThanOrEqual(today as unknown as Date),
+      },
+      relations: { vehicle: true },
+      order: { start_date: 'DESC' },
+    });
+
+    const rental = rentals.find((r) => r.vehicle);
+    if (!rental || !rental.vehicle) {
+      throw new BadRequestException(
+        'Anda tidak memiliki kontrak rental aktif untuk mengajukan keluar kota',
+      );
+    }
+
+    const vehicle = rental.vehicle;
+    const contractStart = toDateOnly(rental.start_date);
+    const contractEnd = toDateOnly(rental.end_date);
+
+    const departure = data.departure_date.slice(0, 10);
+    const ret = data.return_date.slice(0, 10);
+    if (ret < departure) {
       throw new BadRequestException(
         'Tanggal kembali tidak boleh sebelum tanggal keluar',
+      );
+    }
+    if (departure < contractStart || ret > contractEnd) {
+      throw new BadRequestException(
+        `Tanggal perjalanan harus berada dalam masa kontrak rental (${contractStart} s/d ${contractEnd})`,
       );
     }
 
@@ -79,8 +127,8 @@ export class OutOfTownService {
         vehicle_name: `${vehicle.merk} ${vehicle.model}`.trim(),
         vehicle_plate: vehicle.license_plate,
         destination: data.destination.trim(),
-        departure_date: departure,
-        return_date: ret,
+        departure_date: new Date(departure),
+        return_date: new Date(ret),
         reason: data.reason?.trim() || '-',
         status: 'pending',
       });
@@ -117,8 +165,7 @@ export class OutOfTownService {
 
   /** Daftar semua pengajuan (halaman monitoring/persetujuan). */
   async findAll(status?: string): Promise<OutOfTownResponse> {
-    const where =
-      status && ALLOWED_STATUS.includes(status) ? { status } : {};
+    const where = status && ALLOWED_STATUS.includes(status) ? { status } : {};
     const result = await this.requestRepository.find({
       where,
       relations: { driver: true, vehicle: true },
