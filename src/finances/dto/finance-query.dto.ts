@@ -3,6 +3,7 @@ import {
   IsString,
   IsNumber,
   IsEnum,
+  IsIn,
   IsUUID,
   Min,
 } from 'class-validator';
@@ -44,6 +45,18 @@ export class FinanceQueryDto {
   @IsOptional()
   @IsUUID()
   rental_id?: string;
+
+  @IsOptional()
+  @IsEnum(['admin_join', 'membership_fee', 'additional_charge'])
+  fee_kind?: string;
+
+  /**
+   * Kecualikan jenis fee tertentu. Dipakai tab "Fee Membership" di portal
+   * driver supaya tagihan tambahan tidak tercampur di sana.
+   */
+  @IsOptional()
+  @IsIn(['additional_charge'])
+  exclude_fee_kind?: string;
 
   @IsOptional()
   @IsEnum(['unpaid', 'pending', 'paid', 'cancelled'])
