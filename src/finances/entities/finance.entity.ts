@@ -62,11 +62,25 @@ export class Finance {
    * Jenis fee pada baris ini:
    * - 'admin_join'    → Admin Fee Join (biaya admin saat sewa pertama, per jenis mobil).
    * - 'membership_fee'→ Fee membership driver (join: fee penuh; upgrade: selisih level).
+   * - 'additional_charge' → Tagihan tambahan buatan admin (ganti rugi kendaraan,
+   *   kecelakaan, kehilangan STNK, dll). Nama & alasannya disimpan di
+   *   `charge_name` dan `reason`.
    * Nominal selalu disimpan di kolom `fee_admin_join` agar seluruh perhitungan
    * total/pembayaran tetap berlaku.
    */
   @Column({ type: 'varchar', length: 20, default: 'admin_join' })
   fee_kind!: string;
+
+  /**
+   * Nama tagihan tambahan (khusus fee_kind = 'additional_charge'),
+   * mis. "Ganti Rugi Bumper Lecet".
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  charge_name!: string | null;
+
+  /** Alasan dibuatnya tagihan tambahan (khusus fee_kind = 'additional_charge'). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  reason!: string | null;
 
   @Column('varchar', { length: 500 })
   notes!: string;

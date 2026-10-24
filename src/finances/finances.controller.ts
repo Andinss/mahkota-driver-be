@@ -19,6 +19,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 
 import { FinancesService } from './finances.service';
 import { AddFinanceDto } from './dto/add-finance.dto';
+import { CreateAdditionalChargeDto } from './dto/create-additional-charge.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceExportDto } from './dto/finance-export.dto';
 import { CreateFinancePaymentDto } from './dto/create-finance-payment.dto';
@@ -107,6 +108,36 @@ export class FinancesController {
   @Permissions('finance.read')
   getDriverSummary(@Param('driverId') driverId: string) {
     return this.financesService.getDriverSummary(driverId);
+  }
+
+  /** Daftar tagihan tambahan buatan admin (tab "Additional Charges"). */
+  @Get('additional-charges')
+  @Permissions('finance.read')
+  getAdditionalCharges(@Query() query: FinanceQueryDto) {
+    return this.financesService.getAdditionalCharges(query);
+  }
+
+  /** Buat tagihan tambahan manual ke driver (ganti rugi, kecelakaan, STNK, dll). */
+  @Post('additional-charges')
+  @Permissions('finance.create')
+  async createAdditionalCharge(
+    @Body() dto: CreateAdditionalChargeDto,
+    @Req() req: { user?: { id?: string; username?: string } },
+  ) {
+    const meta = extractRequestMeta(req);
+    const result = await this.financesService.createAdditionalCharge(dto);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'CREATE_ADDITIONAL_CHARGE',
+        target: `finance/${result.data.id}`,
+        details: `Created additional charge "${dto.charge_name}" (Rp ${dto.amount}) for driver ${dto.driver_id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
   }
 
   @Get('detail/:id')

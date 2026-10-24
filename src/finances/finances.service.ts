@@ -21,6 +21,7 @@ import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity'
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { AddFinanceDto } from './dto/add-finance.dto';
+import { CreateAdditionalChargeDto } from './dto/create-additional-charge.dto';
 import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceExportDto } from './dto/finance-export.dto';
 import { CreateFinancePaymentDto } from './dto/create-finance-payment.dto';
@@ -253,6 +254,8 @@ export class FinancesService {
       payments_count:
         finance.payments?.length ?? (typeof t.count === 'number' ? t.count : 0),
       notes: finance.notes,
+      charge_name: finance.charge_name,
+      reason: finance.reason,
       payer: finance.payer,
       driver_id: finance.driver_id,
       driver: finance.driver,
@@ -643,7 +646,12 @@ export class FinancesService {
 
     const baseQb = this.financesRepository
       .createQueryBuilder('f')
-      .where('f.fee_admin_join > 0');
+      .where('f.fee_admin_join > 0')
+      // Tagihan tambahan ditampilkan di tabnya sendiri (Additional Charges),
+      // jangan dicampur ke tab Admin Payment.
+      .andWhere('f.fee_kind != :additionalCharge', {
+        additionalCharge: 'additional_charge',
+      });
 
     if (query?.search) {
       baseQb.andWhere(
@@ -691,6 +699,88 @@ export class FinancesService {
     return {
       success: true,
       message: 'Admin fees retrieved successfully',
+      data: items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Daftar tagihan tambahan buatan admin (fee_kind = 'additional_charge'),
+   * dipakai tab "Additional Charges" di halaman finance admin.
+   */
+  async getAdditionalCharges(query?: FinanceQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const baseQb = this.financesRepository
+      .createQueryBuilder('f')
+      .where('f.fee_kind = :feeKind', { feeKind: 'additional_charge' });
+
+    if (query?.search) {
+      baseQb.andWhere(
+        '(f.reference_number ILIKE :search OR f.payer ILIKE :search OR f.charge_name ILIKE :search OR f.reason ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    if (query?.status) {
+      baseQb.andWhere('f.status = :status', { status: query.status });
+    }
+
+    if (query?.driver_id) {
+      baseQb.andWhere('f.driver_id = :driverId', { driverId: query.driver_id });
+    }
+
+    if (query?.start_date) {
+      baseQb.andWhere('f.payment_date >= :start', { start: query.start_date });
+    }
+
+    if (query?.end_date) {
+      baseQb.andWhere('f.payment_date <= :end', { end: query.end_date });
+    }
+
+    const total = await baseQb.getCount();
+
+    const pageIds = (
+      await baseQb
+        .clone()
+        .select('f.id', 'id')
+        .orderBy('f.created_at', 'DESC')
+        .skip(skip)
+        .take(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    let data: Finance[] = [];
+    if (pageIds.length > 0) {
+      data = await this.financesRepository
+        .createQueryBuilder('f')
+        .leftJoinAndSelect('f.driver', 'driver')
+        .leftJoinAndSelect('f.payments', 'payments')
+        .leftJoinAndSelect('payments.method_payment', 'payment_method')
+        .whereInIds(pageIds)
+        .orderBy('f.created_at', 'DESC')
+        .getMany();
+    }
+
+    const totals = await this.attachTotals(data);
+
+    const items = data.map((f) =>
+      this.buildFinanceView(
+        f,
+        totals[f.id] || { paid: 0, pending: 0, count: 0 },
+      ),
+    );
+
+    return {
+      success: true,
+      message: 'Additional charges retrieved successfully',
       data: items,
       meta: {
         total,
@@ -982,6 +1072,137 @@ export class FinancesService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Membuat tagihan tambahan ke driver secara manual
+   * (fee_kind = 'additional_charge'), mis. ganti rugi kendaraan lecet,
+   * kecelakaan, atau kehilangan STNK.
+   *
+   * Berbeda dengan create(): nominal diisi admin (tidak dihitung dari admin fee
+   * join) dan baris langsung berstatus 'unpaid' supaya bisa dibayar penuh atau
+   * dicicil lewat pipeline pembayaran yang sudah ada.
+   */
+  async createAdditionalCharge(dto: CreateAdditionalChargeDto) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const driver = await this.driversRepository.findOne({
+        where: { id: dto.driver_id },
+      });
+      if (!driver) {
+        throw new NotFoundException(
+          `Driver with id ${dto.driver_id} not found`,
+        );
+      }
+
+      const amount = Number(dto.amount);
+      if (!(amount > 0)) {
+        throw new BadRequestException('Nominal tagihan harus lebih dari 0');
+      }
+
+      const paymentDate = dto.payment_date
+        ? new Date(dto.payment_date)
+        : new Date();
+
+      const referenceNumber =
+        await this.nextAdditionalChargeReference(queryRunner);
+
+      const payer =
+        [driver.first_name, driver.last_name].filter(Boolean).join(' ') || '-';
+
+      const finance = queryRunner.manager.create(Finance, {
+        payment_date: paymentDate,
+        reference_number: referenceNumber,
+        payment_method: 'cash',
+        amount_received: 0,
+        fee_admin_join: amount,
+        fee_kind: 'additional_charge',
+        charge_name: dto.charge_name,
+        reason: dto.reason,
+        notes: dto.charge_name,
+        payer,
+        driver_id: dto.driver_id,
+        finance_type: 'unpaid',
+        status: 'unpaid',
+        is_active: true,
+        rentals: [],
+        payments: [],
+      });
+
+      const saved = await queryRunner.manager.save(finance);
+
+      const reloaded = await queryRunner.manager.findOne(Finance, {
+        where: { id: saved.id },
+        relations: { driver: true, rentals: true, payments: true },
+      });
+      if (!reloaded) {
+        throw new InternalServerErrorException('Failed to reload finance');
+      }
+
+      await queryRunner.commitTransaction();
+
+      return {
+        success: true,
+        message: 'Additional charge created successfully',
+        data: this.buildFinanceView(reloaded),
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Failed to create additional charge:', error);
+
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { code: string }).code === '23505'
+      ) {
+        throw new BadRequestException('No. referensi bentrok. Coba lagi.');
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to create additional charge',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Nomor referensi tagihan tambahan: ADC-YYYY/MM/0001, urut per bulan.
+   * Kunci baris sesaat supaya dua submit bersamaan tidak dapat nomor sama.
+   */
+  private async nextAdditionalChargeReference(queryRunner: QueryRunner) {
+    const now = new Date();
+    const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    await queryRunner.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `additional-charge:${ym}`,
+    ]);
+
+    const rows = (await queryRunner.query(
+      `SELECT reference_number FROM finances
+       WHERE reference_number LIKE $1
+       ORDER BY reference_number DESC
+       LIMIT 1`,
+      [`ADC-${ym}/%`],
+    )) as Array<{ reference_number: string }>;
+
+    let seq = 1;
+    if (rows && rows.length > 0) {
+      const parts = rows[0].reference_number.split('/');
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) seq = lastNum + 1;
+    }
+
+    return `ADC-${ym}/${String(seq).padStart(4, '0')}`;
   }
 
   async update(id: string, data: Partial<AddFinanceDto>) {
@@ -1531,6 +1752,16 @@ export class FinancesService {
       );
     }
 
+    // Pisahkan tagihan tambahan (Additional Charges) dari fee membership.
+    if (query?.fee_kind) {
+      baseQb.andWhere('f.fee_kind = :feeKind', { feeKind: query.fee_kind });
+    }
+    if (query?.exclude_fee_kind) {
+      baseQb.andWhere('f.fee_kind != :excludeFeeKind', {
+        excludeFeeKind: query.exclude_fee_kind,
+      });
+    }
+
     if (query?.status) {
       baseQb.andWhere('f.status IN (:...statuses)', {
         statuses: Array.isArray(query.status) ? query.status : [query.status],
@@ -1601,6 +1832,8 @@ export class FinancesService {
       .leftJoinAndSelect('payments.method_payment', 'payment_method')
       .where('f.driver_id = :driverId', { driverId })
       .andWhere('f.fee_admin_join > 0')
+      // Tagihan tambahan bukan admin/membership fee — jangan ikut ke sini.
+      .andWhere("f.fee_kind != 'additional_charge'")
       .andWhere('f.is_active = :isActive', { isActive: true })
       .orderBy('f.created_at', 'ASC')
       .getMany();
@@ -1790,6 +2023,8 @@ export class FinancesService {
       driverName: (v) =>
         v.driver ? `${v.driver.first_name} ${v.driver.last_name}`.trim() : '-',
       notes: (v) => v.notes || '-',
+      charge_name: (v) => v.charge_name || '-',
+      reason: (v) => v.reason || '-',
       id: (v) => v.id || '-',
       vehicle: (v) =>
         v.vehicle ? `${v.vehicle.merk} ${v.vehicle.model}`.trim() : '-',
@@ -1816,6 +2051,8 @@ export class FinancesService {
       payment_method: 'Payment Method',
       driverName: 'Driver Name',
       notes: 'Notes',
+      charge_name: 'Nama Tagihan',
+      reason: 'Alasan',
       id: 'Finance ID',
       vehicle: 'Vehicle',
       vendor: 'Vendor',
