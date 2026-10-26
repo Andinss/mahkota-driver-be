@@ -49,6 +49,15 @@ export class KoinTransaction {
   @Column({ type: 'varchar', length: 255, nullable: true })
   reference_number!: string;
 
+  /**
+   * Alasan transaksi koin, mis. "Sebagai Reward capai target Juni".
+   * Wajib diisi saat admin top up, supaya driver tahu kenapa koinnya
+   * ditambahkan. Kolom lama (sebelum fitur ini) berisi NULL.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  reason!: string | null;
+
+  /** Keterangan tambahan / detail (mis. "Reward 20 unit bulan Juni"). */
   @Column({ type: 'text', nullable: true })
   notes!: string;
 

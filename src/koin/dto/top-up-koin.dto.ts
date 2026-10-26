@@ -1,4 +1,12 @@
-import { IsUUID, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsUUID,
+  IsNumber,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TopUpKoinDto {
@@ -10,8 +18,19 @@ export class TopUpKoinDto {
   @Type(() => Number)
   amount!: number;
 
+  /**
+   * Alasan top up (wajib), mis. "Sebagai Reward" / "Bonus Kinerja".
+   * Ditampilkan ke driver pada riwayat koinnya.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 255)
+  reason!: string;
+
+  /** Keterangan detail (opsional), mis. "Reward capai target 20 unit Juni". */
   @IsOptional()
   @IsString()
+  @Length(0, 500)
   notes?: string;
 
   @IsOptional()
