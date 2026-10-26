@@ -10,6 +10,7 @@ import {
   Req,
   UploadedFile,
   UseGuards,
+  StreamableFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -18,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { PayDailyPaymentDto } from './dto/pay-daily-payment.dto';
+import { DailyPaymentExportDto } from './dto/daily-payment-export.dto';
 import { proofImageUpload } from '../common/proof-upload.util';
 import { ProofCleanupInterceptor } from '../common/proof-cleanup.interceptor';
 
@@ -60,6 +62,29 @@ export class DailyPaymentsController {
     return this.dailyPaymentsService.getMyDailyPayments(driverId, {
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50,
+    });
+  }
+
+  @Get('my-daily-payments/export')
+  @Permissions('finance.read')
+  async exportMyDailyPayments(
+    @Req() req: any,
+    @Query() query: DailyPaymentExportDto,
+  ) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      throw new BadRequestException('No driver profile linked to this account');
+    }
+    const result = await this.dailyPaymentsService.exportMyDailyPayments(
+      driverId,
+      query,
+    );
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
     });
   }
 

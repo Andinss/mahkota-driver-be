@@ -15,6 +15,9 @@ import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity'
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { PayDailyPaymentDto } from './dto/pay-daily-payment.dto';
+import { DailyPaymentExportDto } from './dto/daily-payment-export.dto';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
 import { MethodPayment } from '../method-payment/entities/method-payment.entity';
 import { LatePayment } from '../late-payments/entities/late-payment.entity';
 import { removeStoredFile, toStoredPath } from '../common/proof-upload.util';
@@ -756,5 +759,244 @@ export class DailyPaymentsService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async exportMyDailyPayments(driverId: string, query: DailyPaymentExportDto) {
+    const format = query.format || 'csv';
+    const defaultColumns = [
+      'referenceNumber',
+      'vehicle',
+      'licensePlate',
+      'vendor',
+      'amount',
+      'status',
+      'billDate',
+      'paidAt',
+    ];
+
+    const selectedColumns = query.columns
+      ? Array.from(new Set(query.columns.split(',').map((c) => c.trim())))
+      : defaultColumns;
+
+    const qb = this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .leftJoinAndSelect('dp.vehicle', 'vehicle')
+      .leftJoinAndSelect('dp.rental', 'rental')
+      .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .where('dp.driver_id = :driverId', { driverId });
+
+    if (query.start_date) {
+      qb.andWhere('dp.payment_date >= :start', { start: query.start_date });
+    }
+    if (query.end_date) {
+      qb.andWhere('dp.payment_date <= :end', { end: query.end_date });
+    }
+
+    const payments = await qb
+      .orderBy('dp.payment_date', 'DESC')
+      .addOrderBy('dp.created_at', 'DESC')
+      .getMany();
+
+    const statusLabels: Record<string, string> = {
+      unpaid: 'Belum Dibayar',
+      pending: 'Menunggu Verifikasi',
+      paid: 'Lunas',
+      rejected: 'Ditolak',
+      cancelled: 'Dibatalkan',
+    };
+
+    const columnMap: Record<string, (dp: DailyPayment) => string> = {
+      referenceNumber: (dp) => dp.reference_number || '-',
+      rentalNumber: (dp) => dp.rental?.rental_number || '-',
+      vehicle: (dp) =>
+        dp.vehicle ? `${dp.vehicle.merk} ${dp.vehicle.model}` : '-',
+      licensePlate: (dp) => dp.vehicle?.license_plate || '-',
+      vendor: (dp) => dp.vehicle?.vendor?.name || '-',
+      amount: (dp) => `Rp ${Number(dp.amount || 0).toLocaleString('id-ID')}`,
+      status: (dp) => statusLabels[dp.status] || dp.status || '-',
+      billDate: (dp) => this.formatExportDate(dp.payment_date),
+      createdAt: (dp) => this.formatExportDateTime(dp.created_at),
+      paidAt: (dp) =>
+        dp.status === 'paid' ? this.formatExportDateTime(dp.updated_at) : '-',
+    };
+
+    const headerLabels: Record<string, string> = {
+      referenceNumber: 'No. Tagihan',
+      rentalNumber: 'No. Rental',
+      vehicle: 'Kendaraan',
+      licensePlate: 'Plat Nomor',
+      vendor: 'Vendor',
+      amount: 'Jumlah',
+      status: 'Status',
+      billDate: 'Tanggal Tagihan',
+      createdAt: 'Tanggal Dibuat',
+      paidAt: 'Tanggal Bayar',
+    };
+
+    const validColumns = selectedColumns.filter((c) => columnMap[c]);
+    const activeColumns = validColumns.length ? validColumns : defaultColumns;
+
+    const rows = payments.map((payment) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](payment) || '';
+      }
+      return row;
+    });
+
+    let period: string | undefined;
+    if (query.start_date || query.end_date) {
+      period = `${query.start_date ? this.formatExportDate(query.start_date) : '...'} - ${query.end_date ? this.formatExportDate(query.end_date) : '...'}`;
+    }
+
+    if (format === 'csv') {
+      return this.generateDailyPaymentCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateDailyPaymentXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generateDailyPaymentPdf(
+        rows,
+        activeColumns,
+        headerLabels,
+        period,
+      );
+    }
+  }
+
+  private formatExportDate(value?: Date | string | null): string {
+    if (!value) return '-';
+    if (typeof value === 'string') {
+      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+      if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+  }
+
+  private formatExportDateTime(value?: Date | string | null): string {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  private generateDailyPaymentCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `daily_payments_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateDailyPaymentXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Daily Payments');
+
+    worksheet.columns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 25,
+    }));
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `daily_payments_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generateDailyPaymentPdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+    period?: string,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const content: any[] = [
+      { text: 'Laporan Tagihan Harian', style: 'header' },
+    ];
+    if (period) {
+      content.push({ text: `Periode: ${period}`, style: 'subheader' });
+    }
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: columns.map(() => '*'),
+        body: tableBody,
+      },
+      layout: 'headerLineOnly',
+    });
+
+    const docDefinition: any = {
+      content,
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        subheader: { fontSize: 10, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `daily_payments_export_${Date.now()}.pdf`,
+    };
   }
 }
