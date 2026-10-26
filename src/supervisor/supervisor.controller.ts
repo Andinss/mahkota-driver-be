@@ -42,6 +42,12 @@ export class SupervisorController {
     return this.supervisorService.getCount(req.user.id);
   }
 
+  @Get('summary')
+  @Permissions('driver.read.own')
+  getSummary(@Req() req: any) {
+    return this.supervisorService.getSummary(req.user.id);
+  }
+
   @Get(':id')
   @Permissions('driver.read.own')
   findOne(@Param('id') id: string, @Req() req: any) {

@@ -208,6 +208,43 @@ export class SupervisorService {
     };
   }
 
+  /** Ringkasan driver milik supervisor yang sedang login (bukan global). */
+  async getSummary(userId: string) {
+    const totalDrivers = await this.driversRepository.count({
+      where: { created_by_id: userId },
+    });
+    const activeDrivers = await this.driversRepository.count({
+      where: { created_by_id: userId, is_active: true },
+    });
+    const inactiveDrivers = await this.driversRepository.count({
+      where: { created_by_id: userId, is_active: false },
+    });
+
+    const genderBreakdown = await this.driversRepository
+      .createQueryBuilder('d')
+      .select('d.gender', 'gender')
+      .addSelect('COUNT(d.id)', 'count')
+      .where('d.created_by_id = :userId', { userId })
+      .groupBy('d.gender')
+      .getRawMany<{ gender: string; count: string }>();
+
+    const genderCount: Record<string, number> = {};
+    for (const row of genderBreakdown) {
+      genderCount[row.gender] = Number(row.count);
+    }
+
+    return {
+      success: true,
+      message: 'Driver summary retrieved successfully',
+      data: {
+        total_drivers: totalDrivers,
+        active_drivers: activeDrivers,
+        inactive_drivers: inactiveDrivers,
+        gender_breakdown: genderCount,
+      },
+    };
+  }
+
   private async findOwnedDriver(
     driverId: string,
     userId: string,
