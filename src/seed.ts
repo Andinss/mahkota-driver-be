@@ -37,6 +37,7 @@ const modulePermissions: Record<string, string[]> = {
   late_payment: ['read', 'approve'],
   out_of_town: ['create', 'read', 'approve'],
   monitoring: ['read', 'read.all', 'update'],
+  notification: ['read'],
   koin: ['read', 'top_up', 'deduct', 'refund'],
   setting: ['create', 'read', 'update', 'delete'],
   audit: ['read'],
@@ -87,6 +88,7 @@ const rolesData: RoleSeed[] = [
         'late_payment.approve',
         'out_of_town.read',
         'out_of_town.approve',
+        'notification.read',
       ];
       return perms.includes(name);
     },
@@ -104,6 +106,7 @@ const rolesData: RoleSeed[] = [
         'rental.read',
         'late_payment.read',
         'late_payment.approve',
+        'notification.read',
       ];
       return perms.includes(name);
     },
@@ -123,6 +126,7 @@ const rolesData: RoleSeed[] = [
         'monitoring.update',
         'out_of_town.read',
         'out_of_town.approve',
+        'notification.read',
       ];
       return perms.includes(name);
     },
@@ -143,6 +147,7 @@ const rolesData: RoleSeed[] = [
         'driver_portal.profile',
         'out_of_town.create',
         'out_of_town.read',
+        'notification.read',
       ];
       return perms.includes(name);
     },
@@ -157,6 +162,7 @@ const rolesData: RoleSeed[] = [
         'vehicle.read',
         'rental.read',
         'finance.read',
+        'notification.read',
       ];
       return perms.includes(name);
     },
@@ -166,7 +172,12 @@ const rolesData: RoleSeed[] = [
     code: 'OPERATOR',
     description: 'System operator - basic read access',
     permissionFilter: (name) => {
-      const perms = ['driver.read.all', 'vehicle.read', 'rental.read'];
+      const perms = [
+        'driver.read.all',
+        'vehicle.read',
+        'rental.read',
+        'notification.read',
+      ];
       return perms.includes(name);
     },
   },
