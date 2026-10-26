@@ -30,6 +30,7 @@ const modulePermissions: Record<string, string[]> = {
     'delete.all',
     'delete.own',
     'assign_vehicle',
+    'assign_supervisor',
   ],
   vehicle: ['create', 'read', 'update', 'delete', 'change_status'],
   rental: ['create', 'read', 'update', 'delete', 'approve', 'reject'],
@@ -86,6 +87,7 @@ const rolesData: RoleSeed[] = [
         'finance.read',
         'late_payment.read',
         'late_payment.approve',
+        'monitoring.read',
         'out_of_town.read',
         'out_of_town.approve',
         'notification.read',
@@ -159,6 +161,7 @@ const rolesData: RoleSeed[] = [
     permissionFilter: (name) => {
       const perms = [
         'driver.read.all',
+        'driver.assign_supervisor',
         'vehicle.read',
         'rental.read',
         'finance.read',
@@ -688,6 +691,36 @@ async function seed() {
     console.log(
       `  Created driver: ${dData.employee_id} (${dData.first_name} ${dData.last_name})`,
     );
+  }
+
+  // Backfill penunjukan supervisor untuk data lama: driver yang dibuat oleh
+  // user ber-role supervisor otomatis ditunjuk ke supervisor tersebut.
+  // Driver buatan admin/owner dibiarkan "belum ditunjuk" agar bisa
+  // ditunjuk/diganti lewat halaman detail driver.
+  const supervisorUsers = await userRepository
+    .createQueryBuilder('u')
+    .leftJoin('u.role', 'role')
+    .where('LOWER(role.code) = :code', { code: 'supervisor' })
+    .getMany();
+  const supervisorUserIds = supervisorUsers.map((u) => u.id);
+  if (supervisorUserIds.length > 0) {
+    const backfill = await driverRepository
+      .createQueryBuilder()
+      .update(Driver)
+      .set({ supervisor_id: () => 'created_by_id' })
+      .where('supervisor_id IS NULL')
+      .andWhere('created_by_id IN (:...supervisorUserIds)', {
+        supervisorUserIds,
+      })
+      // Hanya data lama yang belum pernah diubah (created_at = updated_at),
+      // agar driver yang sengaja dilepas penunjukannya tidak ditunjuk ulang.
+      .andWhere('updated_at = created_at')
+      .execute();
+    if (backfill.affected) {
+      console.log(
+        `  Backfilled supervisor assignment for ${backfill.affected} driver(s)`,
+      );
+    }
   }
 
   // Link driver users to their driver records

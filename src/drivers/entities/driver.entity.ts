@@ -119,6 +119,17 @@ export class Driver {
   @JoinColumn({ name: 'created_by_id' })
   created_by!: User;
 
+  /**
+   * Supervisor yang ditunjuk untuk driver ini.
+   * Null = belum ditunjuk. Bisa ditunjuk/diganti oleh Administrator & Owner.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  supervisor_id!: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'supervisor_id' })
+  supervisor!: User | null;
+
   @Column({ type: 'uuid', nullable: true })
   membership_id!: string;
 
