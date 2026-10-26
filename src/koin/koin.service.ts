@@ -114,6 +114,7 @@ export class KoinService {
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         reference_number: referenceNumber,
+        reason: dto.reason,
         notes:
           dto.notes || `Top up koin Rp ${dto.amount.toLocaleString('id-ID')}`,
       });
@@ -311,6 +312,7 @@ export class KoinService {
         balance_after: Number(tx.balance_after),
         reference_id: tx.reference_id,
         reference_number: tx.reference_number,
+        reason: tx.reason,
         notes: tx.notes,
         created_at: tx.created_at,
       })),
@@ -365,6 +367,7 @@ export class KoinService {
         balance_after: Number(tx.balance_after),
         reference_id: tx.reference_id,
         reference_number: tx.reference_number,
+        reason: tx.reason,
         notes: tx.notes,
         created_at: tx.created_at,
       })),
