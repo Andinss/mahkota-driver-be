@@ -10,8 +10,7 @@ import { Express } from 'express';
 import { existsSync, unlinkSync } from 'fs';
 import { Driver } from '../drivers/entities/driver.entity';
 import { AddDriverDto } from '../drivers/dto/add-driver.dto';
-
-const MAX_DRIVERS = 10;
+import { MAX_DRIVERS } from '../drivers/utils/driver-quota.util';
 
 @Injectable()
 export class SupervisorService {
@@ -21,14 +20,17 @@ export class SupervisorService {
   ) {}
 
   async findAll(userId: string, isActive: string = 'true') {
-    const where: { created_by_id: string; is_active?: boolean } = {
-      created_by_id: userId,
+    const where: { supervisor_id: string; is_active?: boolean } = {
+      supervisor_id: userId,
     };
     if (isActive !== 'all') {
       where.is_active = isActive !== 'false';
     }
 
-    const drivers = await this.driversRepository.find({ where });
+    const drivers = await this.driversRepository.find({
+      where,
+      relations: { supervisor: true },
+    });
     return {
       success: true,
       message: 'Drivers retrieved successfully',
@@ -51,7 +53,7 @@ export class SupervisorService {
     files?: Express.Multer.File[],
   ) {
     const count = await this.driversRepository.count({
-      where: { created_by_id: userId },
+      where: { supervisor_id: userId },
     });
     if (count >= MAX_DRIVERS) {
       throw new ForbiddenException(`Maximum ${MAX_DRIVERS} drivers allowed`);
@@ -77,6 +79,7 @@ export class SupervisorService {
       const driver = this.driversRepository.create({
         ...data,
         created_by_id: userId,
+        supervisor_id: userId,
       } as unknown as Driver);
       const result = await this.driversRepository.save(driver);
 
@@ -147,6 +150,8 @@ export class SupervisorService {
       }
 
       const { created_by_id, ...safeData } = data as any;
+      // Supervisor hanya boleh diubah lewat endpoint penunjukan.
+      delete (safeData as Record<string, unknown>).supervisor_id;
       await this.driversRepository.update(existingDriver.id, safeData);
       const driver = await this.driversRepository.findOne({
         where: { id: existingDriver.id },
@@ -199,7 +204,7 @@ export class SupervisorService {
 
   async getCount(userId: string) {
     const count = await this.driversRepository.count({
-      where: { created_by_id: userId },
+      where: { supervisor_id: userId },
     });
     return {
       success: true,
@@ -211,20 +216,20 @@ export class SupervisorService {
   /** Ringkasan driver milik supervisor yang sedang login (bukan global). */
   async getSummary(userId: string) {
     const totalDrivers = await this.driversRepository.count({
-      where: { created_by_id: userId },
+      where: { supervisor_id: userId },
     });
     const activeDrivers = await this.driversRepository.count({
-      where: { created_by_id: userId, is_active: true },
+      where: { supervisor_id: userId, is_active: true },
     });
     const inactiveDrivers = await this.driversRepository.count({
-      where: { created_by_id: userId, is_active: false },
+      where: { supervisor_id: userId, is_active: false },
     });
 
     const genderBreakdown = await this.driversRepository
       .createQueryBuilder('d')
       .select('d.gender', 'gender')
       .addSelect('COUNT(d.id)', 'count')
-      .where('d.created_by_id = :userId', { userId })
+      .where('d.supervisor_id = :userId', { userId })
       .groupBy('d.gender')
       .getRawMany<{ gender: string; count: string }>();
 
@@ -250,7 +255,8 @@ export class SupervisorService {
     userId: string,
   ): Promise<Driver> {
     const driver = await this.driversRepository.findOne({
-      where: { id: driverId, created_by_id: userId },
+      where: { id: driverId, supervisor_id: userId },
+      relations: { supervisor: true },
     });
     if (!driver) throw new NotFoundException('Driver not found');
     return driver;
