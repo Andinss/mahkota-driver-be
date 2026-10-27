@@ -14,6 +14,9 @@ import { TopUpKoinDto } from './dto/top-up-koin.dto';
 import { DeductKoinDto } from './dto/deduct-koin.dto';
 import { RefundKoinDto } from './dto/refund-koin.dto';
 import { KoinQueryDto } from './dto/koin-query.dto';
+import { KoinExportDto } from './dto/koin-export.dto';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
 export class KoinService {
@@ -416,6 +419,221 @@ export class KoinService {
         total_deductions: Number(totalDeductions?.total || 0),
         total_refunds: Number(totalRefunds?.total || 0),
       },
+    };
+  }
+
+  async exportTransactions(query: KoinExportDto) {
+    const format = query.format || 'csv';
+
+    const defaultColumns = [
+      'referenceNumber',
+      'driverName',
+      'type',
+      'amount',
+      'reason',
+      'createdAt',
+    ];
+
+    const selectedColumns = query.columns
+      ? Array.from(new Set(query.columns.split(',').map((c) => c.trim())))
+      : defaultColumns;
+
+    const qb = this.transactionRepository
+      .createQueryBuilder('t')
+      .leftJoinAndSelect('t.driver', 'driver');
+
+    if (query.type) {
+      qb.andWhere('t.type = :type', { type: query.type });
+    }
+
+    if (query.start_date) {
+      qb.andWhere('t.created_at >= :start', {
+        start: query.start_date + ' 00:00:00',
+      });
+    }
+    if (query.end_date) {
+      qb.andWhere('t.created_at <= :end', {
+        end: query.end_date + ' 23:59:59.999',
+      });
+    }
+
+    const transactions = await qb.orderBy('t.created_at', 'DESC').getMany();
+
+    const typeLabels: Record<string, string> = {
+      top_up: 'Top Up',
+      rental_payment: 'Pembayaran Rental',
+      refund: 'Refund',
+      withdrawal: 'Penarikan',
+    };
+
+    const columnMap: Record<string, (t: KoinTransaction) => string> = {
+      referenceNumber: (t) => t.reference_number || '-',
+      driverName: (t) =>
+        t.driver ? `${t.driver.first_name} ${t.driver.last_name}`.trim() : '-',
+      driverEmployeeId: (t) => t.driver?.employee_id || '-',
+      type: (t) => typeLabels[t.type] || t.type || '-',
+      amount: (t) => {
+        const prefix = t.type === 'top_up' || t.type === 'refund' ? '+' : '-';
+        return `${prefix} Rp ${Number(t.amount || 0).toLocaleString('id-ID')}`;
+      },
+      balanceBefore: (t) =>
+        `Rp ${Number(t.balance_before || 0).toLocaleString('id-ID')}`,
+      balanceAfter: (t) =>
+        `Rp ${Number(t.balance_after || 0).toLocaleString('id-ID')}`,
+      reason: (t) => t.reason || '-',
+      notes: (t) => t.notes || '-',
+      createdAt: (t) => this.formatExportDateTime(t.created_at),
+    };
+
+    const headerLabels: Record<string, string> = {
+      referenceNumber: 'No. Referensi',
+      driverName: 'Driver',
+      driverEmployeeId: 'ID Karyawan',
+      type: 'Tipe',
+      amount: 'Jumlah',
+      balanceBefore: 'Saldo Sebelum',
+      balanceAfter: 'Saldo Sesudah',
+      reason: 'Alasan',
+      notes: 'Catatan',
+      createdAt: 'Tanggal',
+    };
+
+    const validColumns = selectedColumns.filter((c) => columnMap[c]);
+    const activeColumns = validColumns.length ? validColumns : defaultColumns;
+
+    const rows = transactions.map((tx) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](tx) || '';
+      }
+      return row;
+    });
+
+    if (format === 'csv') {
+      return this.generateKoinCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateKoinXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generateKoinPdf(rows, activeColumns, headerLabels);
+    }
+  }
+
+  private formatExportDateTime(value?: Date | string | null): string {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  private generateKoinCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `koin_transactions_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateKoinXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Koin Transactions');
+
+    worksheet.columns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 22,
+    }));
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `koin_transactions_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generateKoinPdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const docDefinition: any = {
+      content: [
+        { text: 'Laporan Transaksi Koin', style: 'header' },
+        {
+          table: {
+            headerRows: 1,
+            widths: columns.map(() => '*'),
+            body: tableBody,
+          },
+          layout: 'headerLineOnly',
+        },
+      ],
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `koin_transactions_export_${Date.now()}.pdf`,
     };
   }
 }

@@ -88,6 +88,25 @@ export class DailyPaymentsController {
     });
   }
 
+  /**
+   * Export daily payments (mode admin — semua driver).
+   */
+  @Get('export')
+  @Permissions('finance.read')
+  async exportDailyPayments(@Query() query: DailyPaymentExportDto) {
+    const result = await this.dailyPaymentsService.exportDailyPayments(
+      null,
+      query,
+    );
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
+  }
+
   @Patch(':id/status')
   @Permissions('finance.update')
   updateStatus(

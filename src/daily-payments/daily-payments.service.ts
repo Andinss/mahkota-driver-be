@@ -761,18 +761,40 @@ export class DailyPaymentsService {
     }
   }
 
-  async exportMyDailyPayments(driverId: string, query: DailyPaymentExportDto) {
+  /**
+   * Export daily payments.
+   *
+   * - `driverId != null` → mode driver (hanya data milik driver tsb).
+   * - `driverId == null`  → mode admin (semua data, + kolom `driverName`).
+   */
+  async exportDailyPayments(
+    driverId: string | null,
+    query: DailyPaymentExportDto,
+  ) {
     const format = query.format || 'csv';
-    const defaultColumns = [
-      'referenceNumber',
-      'vehicle',
-      'licensePlate',
-      'vendor',
-      'amount',
-      'status',
-      'billDate',
-      'paidAt',
-    ];
+    const defaultColumns =
+      driverId === null
+        ? [
+            'referenceNumber',
+            'driverName',
+            'vehicle',
+            'licensePlate',
+            'vendor',
+            'amount',
+            'status',
+            'billDate',
+            'paidAt',
+          ]
+        : [
+            'referenceNumber',
+            'vehicle',
+            'licensePlate',
+            'vendor',
+            'amount',
+            'status',
+            'billDate',
+            'paidAt',
+          ];
 
     const selectedColumns = query.columns
       ? Array.from(new Set(query.columns.split(',').map((c) => c.trim())))
@@ -780,11 +802,17 @@ export class DailyPaymentsService {
 
     const qb = this.dailyPaymentsRepository
       .createQueryBuilder('dp')
+      .leftJoinAndSelect('dp.driver', 'driver')
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
-      .leftJoinAndSelect('vehicle.vendor', 'vendor')
-      .where('dp.driver_id = :driverId', { driverId });
+      .leftJoinAndSelect('vehicle.vendor', 'vendor');
 
+    // Mode driver → filter keras by driver_id.
+    if (driverId !== null) {
+      qb.where('dp.driver_id = :driverId', { driverId });
+    }
+
+    // Filter tanggal.
     if (query.start_date) {
       qb.andWhere('dp.payment_date >= :start', { start: query.start_date });
     }
@@ -805,7 +833,8 @@ export class DailyPaymentsService {
       cancelled: 'Dibatalkan',
     };
 
-    const columnMap: Record<string, (dp: DailyPayment) => string> = {
+    // Base map (dipakai kedua mode).
+    const baseColumnMap: Record<string, (dp: DailyPayment) => string> = {
       referenceNumber: (dp) => dp.reference_number || '-',
       rentalNumber: (dp) => dp.rental?.rental_number || '-',
       vehicle: (dp) =>
@@ -820,8 +849,23 @@ export class DailyPaymentsService {
         dp.status === 'paid' ? this.formatExportDateTime(dp.updated_at) : '-',
     };
 
+    // `driverName` hanya untuk admin — otomatis tidak ada di driver mode,
+    // sehingga kalau driver iseng kirim `columns=driverName`, akan di-filter
+    // keluar oleh `validColumns` di bawah.
+    const columnMap: Record<string, (dp: DailyPayment) => string> =
+      driverId === null
+        ? {
+            ...baseColumnMap,
+            driverName: (dp) =>
+              dp.driver
+                ? `${dp.driver.first_name} ${dp.driver.last_name}`
+                : '-',
+          }
+        : baseColumnMap;
+
     const headerLabels: Record<string, string> = {
       referenceNumber: 'No. Tagihan',
+      driverName: 'Nama Driver',
       rentalNumber: 'No. Rental',
       vehicle: 'Kendaraan',
       licensePlate: 'Plat Nomor',
@@ -861,6 +905,10 @@ export class DailyPaymentsService {
         period,
       );
     }
+  }
+
+  exportMyDailyPayments(driverId: string, query: DailyPaymentExportDto) {
+    return this.exportDailyPayments(driverId, query);
   }
 
   private formatExportDate(value?: Date | string | null): string {

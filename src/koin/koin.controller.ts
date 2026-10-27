@@ -9,12 +9,14 @@ import {
   Query,
   Req,
   UseGuards,
+  StreamableFile,
 } from '@nestjs/common';
 import { KoinService } from './koin.service';
 import { TopUpKoinDto } from './dto/top-up-koin.dto';
 import { DeductKoinDto } from './dto/deduct-koin.dto';
 import { RefundKoinDto } from './dto/refund-koin.dto';
 import { KoinQueryDto } from './dto/koin-query.dto';
+import { KoinExportDto } from './dto/koin-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('koin')
@@ -44,6 +46,19 @@ export class KoinController {
   @Patch('refund')
   refund(@Body() dto: RefundKoinDto) {
     return this.koinService.refund(dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('export')
+  async exportTransactions(@Query() query: KoinExportDto) {
+    const result = await this.koinService.exportTransactions(query);
+    if (!result) {
+      throw new BadRequestException('Invalid export format');
+    }
+    return new StreamableFile(result.buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
+    });
   }
 
   /**

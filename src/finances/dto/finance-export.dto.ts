@@ -29,4 +29,14 @@ export class FinanceExportDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['admin_join', 'membership_fee', 'additional_charge'])
+  fee_kind?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['additional_charge'])
+  exclude_fee_kind?: string;
 }
