@@ -84,6 +84,12 @@ export class DriverController {
     });
   }
 
+  @Get(':id/stats')
+  @Permissions('driver.read.all')
+  getStats(@Param('id') id: string) {
+    return this.driverService.getDriverStats(id);
+  }
+
   @Get('detail/:id')
   @Permissions('driver.read.all')
   findDetail(@Param('id') id: string) {

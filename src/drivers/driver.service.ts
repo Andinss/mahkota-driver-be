@@ -13,6 +13,9 @@ import { User } from '../users/entities/user.entity';
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { Finance } from '../finances/entities/finance.entity';
+import { FinancePayment } from '../finances/entities/finance-payment.entity';
+import { Rental } from '../rentals/entities/rental.entity';
+import { LatePayment } from '../late-payments/entities/late-payment.entity';
 import { MAX_DRIVERS } from './utils/driver-quota.util';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
@@ -34,6 +37,12 @@ export class DriverService {
     private readonly financesRepository: Repository<Finance>,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    @InjectRepository(Rental)
+    private readonly rentalsRepository: Repository<Rental>,
+    @InjectRepository(FinancePayment)
+    private readonly financePaymentsRepository: Repository<FinancePayment>,
+    @InjectRepository(LatePayment)
+    private readonly latePaymentsRepository: Repository<LatePayment>,
   ) {}
 
   async findAll(query?: DriverQueryDto) {
@@ -144,6 +153,72 @@ export class DriverService {
       success: true,
       message: 'Driver detail retrieved successfully',
       data: driver,
+    };
+  }
+
+  /**
+   * Statistik ringkas driver untuk header detail:
+   * - total_trips      : jumlah semua rental (termasuk yang sudah lewat).
+   * - active_trips     : jumlah rental aktif (status='active' & end_date>=hari ini).
+   * - total_earnings   : SUM pembayaran driver berstatus 'paid'.
+   * - koin_balance     : saldo koin saat ini.
+   * - late_payment_*   : jumlah izin telat (total/approved/pending).
+   * - membership_name  : nama membership (null jika belum join).
+   */
+  async getDriverStats(driverId: string) {
+    const driver = await this.driversRepository.findOne({
+      where: { id: driverId },
+      relations: { koin: true, membership: true },
+    });
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    const totalTrips = await this.rentalsRepository.count({
+      where: { driver_id: driverId },
+    });
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const activeTrips = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .where('r.driver_id = :driverId', { driverId })
+      .andWhere('r.status = :status', { status: 'active' })
+      .andWhere('r.end_date >= :today', { today: todayStr })
+      .getCount();
+
+    const earningsRaw = await this.financePaymentsRepository
+      .createQueryBuilder('fp')
+      .select('COALESCE(SUM(fp.amount), 0)', 'total')
+      .where('fp.driver_id = :driverId', { driverId })
+      .andWhere('fp.status = :status', { status: 'paid' })
+      .getRawOne();
+    const totalEarnings = Number(earningsRaw?.total || 0);
+
+    const lateTotal = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId },
+    });
+    const lateApproved = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId, status: 'approved' },
+    });
+    const latePending = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId, status: 'pending' },
+    });
+
+    return {
+      success: true,
+      message: 'Driver stats retrieved successfully',
+      data: {
+        total_trips: totalTrips,
+        active_trips: activeTrips,
+        total_earnings: totalEarnings,
+        koin_balance: Number(driver.koin?.balance || 0),
+        late_payment_count: lateTotal,
+        late_payment_approved: lateApproved,
+        late_payment_pending: latePending,
+        membership_name: driver.membership?.name || null,
+      },
     };
   }
 
