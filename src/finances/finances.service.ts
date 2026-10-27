@@ -1984,6 +1984,15 @@ export class FinancesService {
       });
     }
 
+    if (query.fee_kind) {
+      qb.andWhere('f.fee_kind = :feeKind', { feeKind: query.fee_kind });
+    }
+    if (query.exclude_fee_kind) {
+      qb.andWhere('f.fee_kind != :excludeFeeKind', {
+        excludeFeeKind: query.exclude_fee_kind,
+      });
+    }
+
     if (query.start_date) {
       qb.andWhere('f.payment_date >= :startDate', {
         startDate: query.start_date + ' 00:00:00',
@@ -2028,6 +2037,7 @@ export class FinancesService {
       id: (v) => v.id || '-',
       vehicle: (v) =>
         v.vehicle ? `${v.vehicle.merk} ${v.vehicle.model}`.trim() : '-',
+      licensePlate: (v) => v.vehicle?.license_plate || '-',
       vendor: (v) => (v.vendor ? v.vendor.name || '-' : '-'),
       rental_period: (v) => {
         const rentals = v.rentals || [];
@@ -2055,6 +2065,7 @@ export class FinancesService {
       reason: 'Alasan',
       id: 'Finance ID',
       vehicle: 'Vehicle',
+      licensePlate: 'Plat Nomor',
       vendor: 'Vendor',
       rental_period: 'Rental Period',
     };
