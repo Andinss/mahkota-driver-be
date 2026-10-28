@@ -89,9 +89,7 @@ export class RentalsService implements OnModuleInit {
       .andWhere('r.id IS NULL')
       .getRawMany<{ id: string }>();
 
-    if (strandedVehicles.length === 0) {
-      return 0;
-    }
+    if (strandedVehicles.length === 0) return 0;
 
     await this.vehiclesRepository.update(
       { id: In(strandedVehicles.map((item) => item.id)) },
@@ -160,8 +158,6 @@ export class RentalsService implements OnModuleInit {
 
     const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
-    const totalPages = Math.ceil(total / limit);
-
     return {
       success: true,
       message: 'Rentals retrieved successfully',
@@ -170,7 +166,7 @@ export class RentalsService implements OnModuleInit {
         total,
         page,
         limit,
-        totalPages,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
@@ -180,11 +176,7 @@ export class RentalsService implements OnModuleInit {
       where: { id },
       relations: { driver: true, vehicle: true },
     });
-
-    if (!rental) {
-      throw new NotFoundException('Rental not found');
-    }
-
+    if (!rental) throw new NotFoundException('Rental not found');
     return {
       success: true,
       message: 'Rental retrieved successfully',
@@ -202,11 +194,7 @@ export class RentalsService implements OnModuleInit {
         late_payments: true,
       },
     });
-
-    if (!rental) {
-      throw new NotFoundException('Rental not found');
-    }
-
+    if (!rental) throw new NotFoundException('Rental not found');
     return {
       success: true,
       message: 'Rental detail retrieved successfully',
@@ -236,7 +224,6 @@ export class RentalsService implements OnModuleInit {
    */
   async getOngoing() {
     const todayStr = toLocalDateString(new Date());
-
     const data = await this.rentalsRepository
       .createQueryBuilder('r')
       .select([
@@ -366,14 +353,11 @@ export class RentalsService implements OnModuleInit {
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
-
-          if (
-            originalName.includes('kontrak') ||
-            originalName.includes('contract')
-          ) {
+          if (file.fieldname === 'document_contract') {
             data.document_contract = filePath;
+          } else if (file.fieldname === 'checklist_pre') {
+            data.checklist_pre = filePath;
           }
         }
       }
@@ -443,22 +427,22 @@ export class RentalsService implements OnModuleInit {
         });
       }
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
           let oldFilePath: string | null | undefined = null;
 
-          if (
-            originalName.includes('kontrak') ||
-            originalName.includes('contract')
-          ) {
+          if (file.fieldname === 'document_contract') {
             oldFilePath = existingRental.document_contract;
             data.document_contract = filePath;
+          } else if (file.fieldname === 'checklist_pre') {
+            oldFilePath = existingRental.checklist_pre;
+            data.checklist_pre = filePath;
+          } else if (file.fieldname === 'checklist_post') {
+            oldFilePath = existingRental.checklist_post;
+            data.checklist_post = filePath;
           }
 
           if (oldFilePath && oldFilePath !== filePath) {
@@ -514,13 +498,43 @@ export class RentalsService implements OnModuleInit {
     }
   }
 
-  /**
-   * Menghentikan rental yang sedang berjalan sebelum tanggal akhirnya.
-   * Kontrak tetap tersimpan sebagai riwayat (tidak dihapus), tetapi:
-   * - tidak lagi dihitung sebagai rental aktif (tabel status & cron),
-   * - tidak lagi memblokir driver/kendaraan untuk rental baru,
-   * - kendaraan kembali Available bila tidak ada rental lain yang memakainya.
-   */
+  async uploadChecklistPost(rentalId: string, file: Express.Multer.File) {
+    const rental = await this.rentalsRepository.findOne({
+      where: { id: rentalId },
+    });
+    if (!rental) {
+      try {
+        unlinkSync(file.path);
+      } catch {}
+      throw new NotFoundException('Rental not found');
+    }
+
+    const filePath = file.path.replace(/\\/g, '/');
+    const oldFilePath = rental.checklist_post;
+
+    rental.checklist_post = filePath;
+    await this.rentalsRepository.save(rental);
+
+    if (oldFilePath && oldFilePath !== filePath) {
+      try {
+        const fullPath = oldFilePath.startsWith('/')
+          ? oldFilePath
+          : `./${oldFilePath}`;
+        if (existsSync(fullPath)) {
+          unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.error(`Failed to delete old file ${oldFilePath}:`, err);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Checklist post-rental uploaded successfully',
+      data: rental,
+    };
+  }
+
   async stop(rentalId: string) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -531,9 +545,7 @@ export class RentalsService implements OnModuleInit {
         where: { id: rentalId },
       });
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (existingRental.status === 'stopped') {
         throw new BadRequestException('Rental ini sudah dihentikan');
@@ -834,9 +846,7 @@ export class RentalsService implements OnModuleInit {
         });
       }
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (existingRental.vehicle_id) {
         await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, {
@@ -844,7 +854,11 @@ export class RentalsService implements OnModuleInit {
         });
       }
 
-      const fileFields = [existingRental.document_contract];
+      const fileFields = [
+        existingRental.document_contract,
+        existingRental.checklist_pre,
+        existingRental.checklist_post,
+      ];
       for (const filePath of fileFields) {
         if (filePath) {
           try {

@@ -51,6 +51,12 @@ export class Rental {
   @Column({ type: 'varchar', length: 255, nullable: true })
   document_contract!: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  checklist_pre!: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  checklist_post!: string;
+
   @Column({
     type: 'enum',
     enum: ['harian', 'mingguan', 'bulanan', 'tahunan'],
