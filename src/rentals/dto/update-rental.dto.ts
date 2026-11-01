@@ -45,6 +45,14 @@ export class UpdateRentalDto {
   document_contract?: string;
 
   @IsOptional()
+  @IsString()
+  checklist_pre?: string;
+
+  @IsOptional()
+  @IsString()
+  checklist_post?: string;
+
+  @IsOptional()
   @IsEnum(['harian', 'mingguan', 'bulanan', 'tahunan'])
   rental_duration!: string;
 
