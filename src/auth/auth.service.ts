@@ -8,7 +8,6 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as bcrypt from 'bcrypt';
-import { plainToInstance } from 'class-transformer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
@@ -20,6 +19,8 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
+import { VerifyMfaDto } from './dto/mfa.dto';
+import { MfaService } from './mfa.service';
 
 @Injectable()
 export class AuthService {
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly mailerService: MailerService,
     private readonly auditService: AuditService,
+    private readonly mfaService: MfaService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
   ) {}
@@ -51,21 +53,22 @@ export class AuthService {
         body: formData,
       },
     );
-    const turnstileResult = await turnstileRes.json();
+    const turnstileResult = (await turnstileRes.json()) as {
+      success?: boolean;
+    };
 
     if (!turnstileResult.success) {
       throw new UnauthorizedException('Turnstile verification failed');
     }
 
-    const user = await this.usersRepository.findOne({
-      where: { email: loginDto.email },
-      relations: {
-        role: {
-          permissions: true,
-        },
-        driver: true,
-      },
-    });
+    const user = await this.usersRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .leftJoinAndSelect('role.permissions', 'permissions')
+      .leftJoinAndSelect('user.driver', 'driver')
+      .addSelect('user.mfa_secret')
+      .where('user.email = :email', { email: loginDto.email })
+      .getOne();
 
     if (!user || !user.password) {
       await this.auditService
@@ -130,7 +133,28 @@ export class AuthService {
       );
     }
 
-    const payload = { sub: user.id };
+    // Jika MFA aktif, jangan keluarkan access token. Kembalikan challenge
+    // berumur pendek yang hanya bisa dipakai untuk verifikasi kode MFA.
+    if (user.mfa_enabled && user.mfa_secret) {
+      await this.auditService
+        .create({
+          user_id: user.id,
+          username: user.username,
+          action: 'MFA Challenge Issued',
+          target: 'Auth',
+          details: 'Password valid, menunggu verifikasi MFA',
+          ip_address: meta?.ip_address,
+          user_agent: meta?.user_agent,
+          status: 'success',
+        })
+        .catch(() => {});
+
+      return {
+        mfa_required: true,
+        mfa_token: this.mfaService.createChallengeToken(user.id),
+        message: 'Masukkan kode verifikasi dari aplikasi authenticator Anda.',
+      };
+    }
 
     await this.auditService
       .create({
@@ -145,6 +169,53 @@ export class AuthService {
       })
       .catch(() => {});
 
+    return this.buildAuthResponse(user);
+  }
+
+  async verifyMfaLogin(
+    verifyMfaDto: VerifyMfaDto,
+    meta?: { ip_address: string; user_agent: string },
+  ) {
+    try {
+      const user = await this.mfaService.verifyChallenge(
+        verifyMfaDto.mfa_token,
+        verifyMfaDto.code,
+      );
+
+      await this.auditService
+        .create({
+          user_id: user.id,
+          username: user.username,
+          action: 'Login (MFA)',
+          target: 'Auth',
+          details: `User ${user.username} logged in with MFA`,
+          ip_address: meta?.ip_address,
+          user_agent: meta?.user_agent,
+          status: 'success',
+        })
+        .catch(() => {});
+
+      return this.buildAuthResponse(user);
+    } catch (error) {
+      await this.auditService
+        .create({
+          username: 'unknown',
+          action: 'MFA Verification Failed',
+          target: 'Auth',
+          details:
+            error instanceof Error ? error.message : 'MFA verification failed',
+          ip_address: meta?.ip_address,
+          user_agent: meta?.user_agent,
+          status: 'failed',
+        })
+        .catch(() => {});
+      throw error;
+    }
+  }
+
+  private buildAuthResponse(user: User) {
+    const payload = { sub: user.id };
+
     const driverName = user.driver
       ? `${user.driver.first_name ?? ''} ${user.driver.last_name ?? ''}`.trim()
       : '';
@@ -157,6 +228,7 @@ export class AuthService {
         email: user.email,
         driver_id: user.driver?.id || user.driver_id || null,
         driver_name: driverName || null,
+        mfa_enabled: !!user.mfa_enabled,
         role: user.role
           ? {
               id: user.role.id,
@@ -463,6 +535,7 @@ export class AuthService {
       email: profile?.email,
       driver_id: profile?.driver?.id || profile?.driver_id || null,
       driver_name: driverName || null,
+      mfa_enabled: !!profile?.mfa_enabled,
       role: profile?.role
         ? {
             id: profile.role.id,
