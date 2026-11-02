@@ -198,6 +198,27 @@ export class UsersService {
     };
   }
 
+  async resetMfa(id: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.usersRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersRepository.update(id, {
+      mfa_enabled: false,
+      mfa_secret: null,
+      mfa_pending_secret: null,
+      mfa_recovery_codes: null,
+      mfa_enabled_at: null,
+    });
+
+    return {
+      success: true,
+      message:
+        'MFA berhasil direset. Pengguna dapat mengaktifkan MFA kembali dari halaman Keamanan Akun.',
+    };
+  }
+
   async exportData(query: UserExportDto) {
     const format = query.format || 'csv';
     const selectedColumns = query.columns

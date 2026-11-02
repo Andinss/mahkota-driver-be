@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { MfaService } from './mfa.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PermissionGuard } from './guards/permission.guard';
 import { UsersModule } from '../users/users.module';
@@ -27,7 +28,7 @@ import { User } from '../users/entities/user.entity';
     TypeOrmModule.forFeature([User]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PermissionGuard],
+  providers: [AuthService, MfaService, JwtStrategy, PermissionGuard],
   exports: [PermissionGuard],
 })
 export class AuthModule {}
