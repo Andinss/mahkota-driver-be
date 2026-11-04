@@ -2,18 +2,22 @@ import { existsSync, unlinkSync } from 'fs';
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Cron } from '@nestjs/schedule';
+import { Repository, DataSource, In } from 'typeorm';
 import { Express } from 'express';
 import { Rental } from './entities/rental.entity';
 import { Vehicle } from '../vehicles/entities/vehicle.entity';
 import { Driver } from '../drivers/entities/driver.entity';
 import { FinancePayment } from '../finances/entities/finance-payment.entity';
 import { AddRentalDto } from './dto/add-rental.dto';
+import { nextRentalNumber } from './rental-number.util';
 
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear();
@@ -27,7 +31,9 @@ import * as ExcelJS from 'exceljs';
 import { createObjectCsvStringifier } from 'csv-writer';
 
 @Injectable()
-export class RentalsService {
+export class RentalsService implements OnModuleInit {
+  private readonly logger = new Logger(RentalsService.name);
+
   constructor(
     @InjectRepository(Rental)
     private readonly rentalsRepository: Repository<Rental>,
@@ -39,6 +45,63 @@ export class RentalsService {
     private readonly financePaymentRepository: Repository<FinancePayment>,
     private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * Sinkronisasi sekali saat boot. Kalau server mati ketika cron harian
+   * berjalan, status kendaraan bisa tertahan di 'rented'; ini merapikannya
+   * tanpa harus menunggu tengah malam.
+   */
+  async onModuleInit() {
+    try {
+      await this.releaseVehiclesFromFinishedRentals();
+    } catch (error) {
+      this.logger.error(
+        'Failed to sync vehicle availability on startup',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Mengembalikan kendaraan ke 'Available' bila tidak ada lagi rental aktif
+   * yang mencakup hari ini.
+   *
+   * Rental yang sudah lewat tanggal akhir tetap tersimpan dengan status
+   * 'active' (lihat komentar Rental.status), sedangkan kendaraan baru
+   * dikembalikan ke 'Available' saat rental di-stop manual. Tanpa job ini
+   * kendaraan yang kontraknya habis normal akan tertahan 'rented' selamanya.
+   * Syaratnya sengaja dibuat sama dengan pengecekan di stop().
+   */
+  @Cron('10 0 * * *')
+  async releaseVehiclesFromFinishedRentals(): Promise<number> {
+    const todayStr = toLocalDateString(new Date());
+
+    const strandedVehicles = await this.vehiclesRepository
+      .createQueryBuilder('v')
+      .leftJoin(
+        Rental,
+        'r',
+        'r.vehicle_id = v.id AND r.status = :activeStatus AND r.end_date >= :today',
+        { activeStatus: 'active', today: todayStr },
+      )
+      .select('v.id', 'id')
+      .where('v.status = :rentedStatus', { rentedStatus: 'rented' })
+      .andWhere('r.id IS NULL')
+      .getRawMany<{ id: string }>();
+
+    if (strandedVehicles.length === 0) return 0;
+
+    await this.vehiclesRepository.update(
+      { id: In(strandedVehicles.map((item) => item.id)) },
+      { status: 'Available' },
+    );
+
+    this.logger.log(
+      `Released ${strandedVehicles.length} vehicle(s) to Available (rental period ended)`,
+    );
+
+    return strandedVehicles.length;
+  }
 
   async findAll(query?: RentalQueryDto) {
     const page = query?.page || 1;
@@ -95,8 +158,6 @@ export class RentalsService {
 
     const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
-    const totalPages = Math.ceil(total / limit);
-
     return {
       success: true,
       message: 'Rentals retrieved successfully',
@@ -105,7 +166,7 @@ export class RentalsService {
         total,
         page,
         limit,
-        totalPages,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
@@ -115,11 +176,7 @@ export class RentalsService {
       where: { id },
       relations: { driver: true, vehicle: true },
     });
-
-    if (!rental) {
-      throw new NotFoundException('Rental not found');
-    }
-
+    if (!rental) throw new NotFoundException('Rental not found');
     return {
       success: true,
       message: 'Rental retrieved successfully',
@@ -137,11 +194,7 @@ export class RentalsService {
         late_payments: true,
       },
     });
-
-    if (!rental) {
-      throw new NotFoundException('Rental not found');
-    }
-
+    if (!rental) throw new NotFoundException('Rental not found');
     return {
       success: true,
       message: 'Rental detail retrieved successfully',
@@ -164,14 +217,13 @@ export class RentalsService {
     };
   }
 
-/**
+  /**
    * Rental yang belum berhenti dan periodenya belum habis (berjalan atau
    * akan berjalan). Dipakai form rental baru untuk menyembunyikan driver dan
    * kendaraan yang masih terikat kontrak lain.
    */
   async getOngoing() {
     const todayStr = toLocalDateString(new Date());
-
     const data = await this.rentalsRepository
       .createQueryBuilder('r')
       .select([
@@ -301,20 +353,27 @@ export class RentalsService {
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
-
-          if (
-            originalName.includes('kontrak') ||
-            originalName.includes('contract')
-          ) {
+          if (file.fieldname === 'document_contract') {
             data.document_contract = filePath;
+          } else if (file.fieldname === 'checklist_pre') {
+            data.checklist_pre = filePath;
           }
         }
       }
 
+      // Nomor urut dihitung di sini (bukan acak) supaya RENT/2026/10/0001,
+      // 0002, 0003, ... Kunci baris sementara agar dua submit bersamaan
+      // tidak mendapat nomor yang sama.
+      await queryRunner.manager.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        [`rental-number:${new Date().getFullYear()}-${new Date().getMonth()}`],
+      );
+      const rentalNumber = await nextRentalNumber(queryRunner.manager);
+
       const rental = this.rentalsRepository.create({
         ...data,
+        rental_number: rentalNumber,
       });
       const result = await queryRunner.manager.save(rental);
 
@@ -368,22 +427,22 @@ export class RentalsService {
         });
       }
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const originalName = file.originalname.toLowerCase();
           const filePath = file.path.replace(/\\/g, '/');
           let oldFilePath: string | null | undefined = null;
 
-          if (
-            originalName.includes('kontrak') ||
-            originalName.includes('contract')
-          ) {
+          if (file.fieldname === 'document_contract') {
             oldFilePath = existingRental.document_contract;
             data.document_contract = filePath;
+          } else if (file.fieldname === 'checklist_pre') {
+            oldFilePath = existingRental.checklist_pre;
+            data.checklist_pre = filePath;
+          } else if (file.fieldname === 'checklist_post') {
+            oldFilePath = existingRental.checklist_post;
+            data.checklist_post = filePath;
           }
 
           if (oldFilePath && oldFilePath !== filePath) {
@@ -439,13 +498,43 @@ export class RentalsService {
     }
   }
 
-  /**
-   * Menghentikan rental yang sedang berjalan sebelum tanggal akhirnya.
-   * Kontrak tetap tersimpan sebagai riwayat (tidak dihapus), tetapi:
-   * - tidak lagi dihitung sebagai rental aktif (tabel status & cron),
-   * - tidak lagi memblokir driver/kendaraan untuk rental baru,
-   * - kendaraan kembali Available bila tidak ada rental lain yang memakainya.
-   */
+  async uploadChecklistPost(rentalId: string, file: Express.Multer.File) {
+    const rental = await this.rentalsRepository.findOne({
+      where: { id: rentalId },
+    });
+    if (!rental) {
+      try {
+        unlinkSync(file.path);
+      } catch {}
+      throw new NotFoundException('Rental not found');
+    }
+
+    const filePath = file.path.replace(/\\/g, '/');
+    const oldFilePath = rental.checklist_post;
+
+    rental.checklist_post = filePath;
+    await this.rentalsRepository.save(rental);
+
+    if (oldFilePath && oldFilePath !== filePath) {
+      try {
+        const fullPath = oldFilePath.startsWith('/')
+          ? oldFilePath
+          : `./${oldFilePath}`;
+        if (existsSync(fullPath)) {
+          unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.error(`Failed to delete old file ${oldFilePath}:`, err);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Checklist post-rental uploaded successfully',
+      data: rental,
+    };
+  }
+
   async stop(rentalId: string) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -456,9 +545,7 @@ export class RentalsService {
         where: { id: rentalId },
       });
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (existingRental.status === 'stopped') {
         throw new BadRequestException('Rental ini sudah dihentikan');
@@ -759,9 +846,7 @@ export class RentalsService {
         });
       }
 
-      if (!existingRental) {
-        throw new NotFoundException('Rental not found');
-      }
+      if (!existingRental) throw new NotFoundException('Rental not found');
 
       if (existingRental.vehicle_id) {
         await queryRunner.manager.update(Vehicle, existingRental.vehicle_id, {
@@ -769,7 +854,11 @@ export class RentalsService {
         });
       }
 
-      const fileFields = [existingRental.document_contract];
+      const fileFields = [
+        existingRental.document_contract,
+        existingRental.checklist_pre,
+        existingRental.checklist_post,
+      ];
       for (const filePath of fileFields) {
         if (filePath) {
           try {

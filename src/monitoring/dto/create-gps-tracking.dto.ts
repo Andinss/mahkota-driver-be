@@ -1,4 +1,4 @@
-import { IsOptional } from 'class-validator';
+import { IsIn, IsOptional } from 'class-validator';
 
 export class CreateGpsTrackingDto {
   @IsOptional()
@@ -53,4 +53,12 @@ export class GpsTrackingQueryDto {
 
   @IsOptional()
   VehicleId?: string;
+
+  /**
+   * `own` = hanya kendaraan yang sedang disewa driver milik supervisor
+   * yang login. Default (kosong) = semua armada.
+   */
+  @IsOptional()
+  @IsIn(['all', 'own'])
+  scope?: 'all' | 'own';
 }

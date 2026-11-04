@@ -17,7 +17,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string }) {
+  async validate(payload: { sub: string; purpose?: string }) {
+    // Token challenge MFA hanya boleh dipakai di endpoint verifikasi MFA,
+    // tidak boleh dianggap sebagai access token.
+    if (payload.purpose === 'mfa') {
+      throw new UnauthorizedException();
+    }
+
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       throw new UnauthorizedException();

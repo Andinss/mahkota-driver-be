@@ -10,6 +10,7 @@ import {
   Delete,
   StreamableFile,
   UploadedFiles,
+  UploadedFile,
   UseInterceptors,
   Param,
   Query,
@@ -18,8 +19,7 @@ import {
 import { extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
-import { Express } from 'express';
-import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { RentalsService } from './rentals.service';
 import { AddRentalDto } from './dto/add-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
@@ -89,7 +89,10 @@ export class RentalsController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          const folder = 'uploads/kontrak/';
+          const isChecklist = file.fieldname.startsWith('checklist');
+          const folder = isChecklist
+            ? 'uploads/checklist/'
+            : 'uploads/kontrak/';
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -101,24 +104,28 @@ export class RentalsController {
           const uniqueSuffix =
             Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          const nameWithoutExt = file.originalname.slice(0, -ext.length);
-          callback(null, `contract-${uniqueSuffix}${ext}`);
+          const prefix = file.fieldname.startsWith('checklist')
+            ? 'checklist'
+            : 'contract';
+          callback(null, `${prefix}-${uniqueSuffix}${ext}`);
         },
       }),
       fileFilter: (req, file, callback) => {
-        const allowedMimes = /pdf/;
+        const allowedMimes = /pdf|jpg|jpeg|png/;
         const ext = extname(file.originalname).toLowerCase();
         if (allowedMimes.test(ext)) {
           callback(null, true);
         } else {
           callback(
-            new BadRequestException('Only PDF files are allowed! (pdf)'),
+            new BadRequestException(
+              'Only PDF and Image files are allowed! (pdf, jpg, jpeg, png)',
+            ),
             false,
           );
         }
       },
       limits: {
-        files: 1,
+        files: 2,
         fileSize: 10 * 1024 * 1024,
       },
     }),
@@ -136,7 +143,10 @@ export class RentalsController {
     AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, callback) => {
-          const folder = 'uploads/kontrak/';
+          const isChecklist = file.fieldname.startsWith('checklist');
+          const folder = isChecklist
+            ? 'uploads/checklist/'
+            : 'uploads/kontrak/';
 
           if (!existsSync(folder)) {
             mkdirSync(folder, { recursive: true });
@@ -148,24 +158,28 @@ export class RentalsController {
           const uniqueSuffix =
             Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          const nameWithoutExt = file.originalname.slice(0, -ext.length);
-          callback(null, `contract-${uniqueSuffix}${ext}`);
+          const prefix = file.fieldname.startsWith('checklist')
+            ? 'checklist'
+            : 'contract';
+          callback(null, `${prefix}-${uniqueSuffix}${ext}`);
         },
       }),
       fileFilter: (req, file, callback) => {
-        const allowedMimes = /pdf/;
+        const allowedMimes = /pdf|jpg|jpeg|png/;
         const ext = extname(file.originalname).toLowerCase();
         if (allowedMimes.test(ext)) {
           callback(null, true);
         } else {
           callback(
-            new BadRequestException('Only PDF files are allowed! (pdf)'),
+            new BadRequestException(
+              'Only PDF and Image files are allowed! (pdf, jpg, jpeg, png)',
+            ),
             false,
           );
         }
       },
       limits: {
-        files: 1,
+        files: 2,
         fileSize: 10 * 1024 * 1024,
       },
     }),
@@ -176,6 +190,50 @@ export class RentalsController {
     @Param('id') id: string,
   ) {
     return this.rentalService.update(id, updateRentalDto, files);
+  }
+
+  @Post(':id/checklist-post')
+  @Permissions('rental.update')
+  @UseInterceptors(
+    FileInterceptor('checklist_post', {
+      storage: diskStorage({
+        destination: (req, file, callback) => {
+          const folder = 'uploads/checklist/';
+          if (!existsSync(folder)) mkdirSync(folder, { recursive: true });
+          callback(null, folder);
+        },
+        filename: (req, file, callback) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          callback(null, `checklist-post-${uniqueSuffix}${ext}`);
+        },
+      }),
+      fileFilter: (req, file, callback) => {
+        const allowedMimes = /pdf|jpg|jpeg|png/;
+        const ext = extname(file.originalname).toLowerCase();
+        if (allowedMimes.test(ext)) {
+          callback(null, true);
+        } else {
+          callback(
+            new BadRequestException(
+              'Only PDF and Image files are allowed! (pdf, jpg, jpeg, png)',
+            ),
+            false,
+          );
+        }
+      },
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async uploadChecklistPost(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('File checklist post wajib diunggah');
+    }
+    return this.rentalService.uploadChecklistPost(id, file);
   }
 
   @Delete('delete/:id')

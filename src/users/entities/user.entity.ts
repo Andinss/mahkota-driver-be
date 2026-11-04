@@ -65,6 +65,27 @@ export class User {
   @Column('timestamp', { nullable: true })
   set_password_expires_at!: Date | null;
 
+  @Column('boolean', { default: false })
+  mfa_enabled!: boolean;
+
+  /** Secret TOTP terenkripsi (AES-256-GCM), hanya diisi saat MFA aktif. */
+  @Column('varchar', { length: 512, nullable: true, select: false })
+  @Exclude()
+  mfa_secret!: string | null;
+
+  /** Secret sementara selama proses aktivasi MFA. */
+  @Column('varchar', { length: 512, nullable: true, select: false })
+  @Exclude()
+  mfa_pending_secret!: string | null;
+
+  /** Daftar hash bcrypt kode pemulihan (JSON string). */
+  @Column('text', { nullable: true, select: false })
+  @Exclude()
+  mfa_recovery_codes!: string | null;
+
+  @Column('timestamp', { nullable: true })
+  mfa_enabled_at!: Date | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

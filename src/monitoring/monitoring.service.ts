@@ -22,7 +22,7 @@ export class MonitoringService {
     private readonly vehicleRepository: Repository<Vehicle>,
   ) {}
 
-  async findAll(query?: GpsTrackingQueryDto) {
+  async findAll(query?: GpsTrackingQueryDto, userId?: string) {
     const page = query?.page || 1;
     const limit = query?.limit || 50;
     const skip = (page - 1) * limit;
@@ -39,6 +39,16 @@ export class MonitoringService {
       .leftJoinAndSelect('r.driver', 'driver')
       .orderBy('t.DatetimeUTC', 'DESC')
       .addOrderBy('t.created_at', 'DESC');
+
+    // Supervisor hanya melihat kendaraan yang sedang disewa driver miliknya.
+    if (query?.scope === 'own') {
+      if (!userId) {
+        throw new BadRequestException('User context is required for own scope');
+      }
+      qb.andWhere('driver.supervisor_id = :supervisorId', {
+        supervisorId: userId,
+      });
+    }
 
     if (query?.VehicleId) {
       qb.andWhere('t.VehicleId = :vehicleId', {

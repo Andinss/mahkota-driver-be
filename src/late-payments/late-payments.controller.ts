@@ -5,14 +5,27 @@ import {
   Body,
   Param,
   Delete,
+  Query,
+  Req,
+  BadRequestException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { LatePaymentsService } from './late-payments.service';
 import { ApproveRejectDto } from './dto/approve-reject.dto';
 import { CreateLatePaymentDto } from './dto/create-late-payment.dto';
+import { CreateMyLatePaymentDto } from './dto/create-my-late-payment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
+import { proofImageUpload } from '../common/proof-upload.util';
+import { ProofCleanupInterceptor } from '../common/proof-cleanup.interceptor';
+
+interface AuthedRequest {
+  user?: { driver?: { id?: string }; driver_id?: string };
+}
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('late-payments')
@@ -25,32 +38,84 @@ export class LatePaymentsController {
     return this.latePaymentsService.create(dto);
   }
 
+  /** Pengajuan izin telat bayar oleh driver (per tagihan harian). */
+  @Post('my')
+  @Permissions('finance.create')
+  @UseInterceptors(
+    FileInterceptor('proof_image', proofImageUpload),
+    new ProofCleanupInterceptor(),
+  )
+  createMine(
+    @Body() dto: CreateMyLatePaymentDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthedRequest,
+  ) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      throw new BadRequestException('No driver profile linked to this account');
+    }
+    return this.latePaymentsService.createForDriver(dto, driverId, file);
+  }
+
   @Get()
-  @Permissions('finance.read')
+  @Permissions('late_payment.read')
   findAll() {
     return this.latePaymentsService.findAll();
   }
 
   @Get('stats')
-  @Permissions('finance.read')
+  @Permissions('late_payment.read')
   getStats() {
     return this.latePaymentsService.getStats();
   }
 
-  @Get(':id')
+  /** Daftar izin telat milik driver yang login. */
+  @Get('my')
   @Permissions('finance.read')
+  listMine(@Req() req: AuthedRequest) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return { success: true, message: 'No driver', data: [] };
+    }
+    return this.latePaymentsService.listMine(driverId);
+  }
+
+  /** Ringkasan keterlambatan (dasar limit hutang, izin approved dikecualikan). */
+  @Get('my-late-summary')
+  @Permissions('finance.read')
+  myLateSummary(@Req() req: AuthedRequest) {
+    const driverId = req.user?.driver?.id || req.user?.driver_id;
+    if (!driverId) {
+      return {
+        success: true,
+        message: 'No driver',
+        data: null,
+      };
+    }
+    return this.latePaymentsService.getLateSummary(driverId);
+  }
+
+  /** Daftar pengajuan izin untuk halaman persetujuan. */
+  @Get('requests')
+  @Permissions('late_payment.read')
+  listRequests(@Query('status') status?: string) {
+    return this.latePaymentsService.listRequests(status);
+  }
+
+  @Get(':id')
+  @Permissions('late_payment.read')
   findOne(@Param('id') id: string) {
     return this.latePaymentsService.findById(id);
   }
 
   @Post(':id/approve')
-  @Permissions('finance.approve')
+  @Permissions('late_payment.approve')
   approve(@Param('id') id: string, @Body() dto: ApproveRejectDto) {
     return this.latePaymentsService.approve(id, dto.admin_note);
   }
 
   @Post(':id/reject')
-  @Permissions('finance.approve')
+  @Permissions('late_payment.approve')
   reject(@Param('id') id: string, @Body() dto: ApproveRejectDto) {
     return this.latePaymentsService.reject(id, dto.admin_note);
   }

@@ -1,5 +1,6 @@
 import { existsSync, unlinkSync } from 'fs';
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -8,9 +9,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Express } from 'express';
 import { Driver } from './entities/driver.entity';
+import { User } from '../users/entities/user.entity';
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { Finance } from '../finances/entities/finance.entity';
+import { FinancePayment } from '../finances/entities/finance-payment.entity';
+import { Rental } from '../rentals/entities/rental.entity';
+import { LatePayment } from '../late-payments/entities/late-payment.entity';
+import { MAX_DRIVERS } from './utils/driver-quota.util';
 import { AddDriverDto } from './dto/add-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
@@ -29,6 +35,14 @@ export class DriverService {
     private readonly membershipRepository: Repository<Membership>,
     @InjectRepository(Finance)
     private readonly financesRepository: Repository<Finance>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
+    @InjectRepository(Rental)
+    private readonly rentalsRepository: Repository<Rental>,
+    @InjectRepository(FinancePayment)
+    private readonly financePaymentsRepository: Repository<FinancePayment>,
+    @InjectRepository(LatePayment)
+    private readonly latePaymentsRepository: Repository<LatePayment>,
   ) {}
 
   async findAll(query?: DriverQueryDto) {
@@ -73,6 +87,7 @@ export class DriverService {
       data = await this.driversRepository
         .createQueryBuilder('d')
         .leftJoinAndSelect('d.created_by', 'created_by')
+        .leftJoinAndSelect('d.supervisor', 'supervisor')
         .leftJoinAndSelect('d.koin', 'koin')
         .leftJoinAndSelect('d.membership', 'membership')
         .leftJoinAndSelect('d.rentals', 'rentals')
@@ -102,6 +117,7 @@ export class DriverService {
       where: { id },
       relations: {
         created_by: true,
+        supervisor: true,
         membership: true,
         rentals: { vehicle: true },
       },
@@ -123,6 +139,7 @@ export class DriverService {
       where: { id },
       relations: {
         created_by: true,
+        supervisor: true,
         membership: true,
         rentals: { vehicle: true },
       },
@@ -136,6 +153,72 @@ export class DriverService {
       success: true,
       message: 'Driver detail retrieved successfully',
       data: driver,
+    };
+  }
+
+  /**
+   * Statistik ringkas driver untuk header detail:
+   * - total_trips      : jumlah semua rental (termasuk yang sudah lewat).
+   * - active_trips     : jumlah rental aktif (status='active' & end_date>=hari ini).
+   * - total_earnings   : SUM pembayaran driver berstatus 'paid'.
+   * - koin_balance     : saldo koin saat ini.
+   * - late_payment_*   : jumlah izin telat (total/approved/pending).
+   * - membership_name  : nama membership (null jika belum join).
+   */
+  async getDriverStats(driverId: string) {
+    const driver = await this.driversRepository.findOne({
+      where: { id: driverId },
+      relations: { koin: true, membership: true },
+    });
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    const totalTrips = await this.rentalsRepository.count({
+      where: { driver_id: driverId },
+    });
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const activeTrips = await this.rentalsRepository
+      .createQueryBuilder('r')
+      .where('r.driver_id = :driverId', { driverId })
+      .andWhere('r.status = :status', { status: 'active' })
+      .andWhere('r.end_date >= :today', { today: todayStr })
+      .getCount();
+
+    const earningsRaw = await this.financePaymentsRepository
+      .createQueryBuilder('fp')
+      .select('COALESCE(SUM(fp.amount), 0)', 'total')
+      .where('fp.driver_id = :driverId', { driverId })
+      .andWhere('fp.status = :status', { status: 'paid' })
+      .getRawOne();
+    const totalEarnings = Number(earningsRaw?.total || 0);
+
+    const lateTotal = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId },
+    });
+    const lateApproved = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId, status: 'approved' },
+    });
+    const latePending = await this.latePaymentsRepository.count({
+      where: { driver_id: driverId, status: 'pending' },
+    });
+
+    return {
+      success: true,
+      message: 'Driver stats retrieved successfully',
+      data: {
+        total_trips: totalTrips,
+        active_trips: activeTrips,
+        total_earnings: totalEarnings,
+        koin_balance: Number(driver.koin?.balance || 0),
+        late_payment_count: lateTotal,
+        late_payment_approved: lateApproved,
+        late_payment_pending: latePending,
+        membership_name: driver.membership?.name || null,
+      },
     };
   }
 
@@ -170,6 +253,94 @@ export class DriverService {
         gender_breakdown: genderCount,
       },
     };
+  }
+
+  /** Kandidat supervisor untuk dropdown penunjukan driver. */
+  async getSupervisorOptions() {
+    const supervisors = await this.usersRepository
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.role', 'role')
+      .where('LOWER(role.code) = :code', { code: 'supervisor' })
+      .andWhere('u.is_active = :isActive', { isActive: true })
+      .orderBy('u.username', 'ASC')
+      .getMany();
+
+    const counts = await this.driversRepository
+      .createQueryBuilder('d')
+      .select('d.supervisor_id', 'supervisor_id')
+      .addSelect('COUNT(d.id)', 'count')
+      .where('d.supervisor_id IS NOT NULL')
+      .groupBy('d.supervisor_id')
+      .getRawMany<{ supervisor_id: string; count: string }>();
+
+    const countBySupervisor = new Map<string, number>(
+      counts.map((row) => [row.supervisor_id, Number(row.count)]),
+    );
+
+    return {
+      success: true,
+      message: 'Supervisor options retrieved successfully',
+      data: supervisors.map((user) => {
+        const driverCount = countBySupervisor.get(user.id) ?? 0;
+        return {
+          id: user.id,
+          username: user.username,
+          fullname: user.fullname ?? null,
+          email: user.email,
+          driver_count: driverCount,
+          max_drivers: MAX_DRIVERS,
+          remaining: Math.max(MAX_DRIVERS - driverCount, 0),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Tunjuk / ganti / lepas supervisor untuk seorang driver.
+   * `null` berarti melepas penunjukan.
+   */
+  async assignSupervisor(driverId: string, supervisorId: string | null) {
+    const driver = await this.driversRepository.findOne({
+      where: { id: driverId },
+    });
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    if (supervisorId === null) {
+      driver.supervisor_id = null;
+      await this.driversRepository.save(driver);
+      return this.findById(driver.id);
+    }
+
+    const supervisor = await this.usersRepository.findOne({
+      where: { id: supervisorId },
+      relations: { role: true },
+    });
+    if (!supervisor || supervisor.role?.code?.toLowerCase() !== 'supervisor') {
+      throw new BadRequestException('User yang dipilih bukan supervisor');
+    }
+    if (!supervisor.is_active) {
+      throw new BadRequestException('Supervisor yang dipilih tidak aktif');
+    }
+
+    // Kuota hanya dicek untuk supervisor baru, bukan saat menyimpan ulang
+    // supervisor yang sama.
+    if (driver.supervisor_id !== supervisorId) {
+      const driverCount = await this.driversRepository.count({
+        where: { supervisor_id: supervisorId },
+      });
+      if (driverCount >= MAX_DRIVERS) {
+        throw new BadRequestException(
+          `Supervisor sudah menangani ${MAX_DRIVERS} driver (kuota penuh)`,
+        );
+      }
+    }
+
+    driver.supervisor_id = supervisorId;
+    await this.driversRepository.save(driver);
+
+    return this.findById(driver.id);
   }
 
   async findByEmployeeId(employeeId: string): Promise<Driver | null> {
@@ -291,9 +462,18 @@ export class DriverService {
         }
       }
 
+      // Driver yang dibuat supervisor otomatis ditunjuk ke supervisor tersebut.
+      const creator = await this.usersRepository.findOne({
+        where: { id: userId },
+        relations: { role: true },
+      });
+      const shouldLinkSupervisor =
+        creator?.role?.code?.toLowerCase() === 'supervisor';
+
       const driver = this.driversRepository.create({
         ...data,
         created_by_id: userId,
+        supervisor_id: shouldLinkSupervisor ? userId : null,
       } as unknown as Driver);
       const result = await this.driversRepository.save(driver);
 
@@ -377,6 +557,8 @@ export class DriverService {
       }
 
       const { created_by_id, ...safeData } = data as any;
+      // Supervisor hanya boleh diubah lewat endpoint penunjukan.
+      delete (safeData as Record<string, unknown>).supervisor_id;
       const result = await this.driversRepository.update(
         existingDriver.id,
         safeData,

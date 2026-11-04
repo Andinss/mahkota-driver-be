@@ -21,7 +21,7 @@ export class NotificationController {
 
   @Get()
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permissions('monitoring.read')
+  @Permissions('notification.read')
   findAll(
     @Query('type') type?: string,
     @Query('is_read') is_read?: string,
@@ -36,14 +36,14 @@ export class NotificationController {
 
   @Get('recent')
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permissions('monitoring.read')
+  @Permissions('notification.read')
   findRecent(@Query('limit') limit?: string) {
     return this.notificationService.findRecent(limit ? Number(limit) : 5);
   }
 
   @Get('unread-count')
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @Permissions('monitoring.read')
+  @Permissions('notification.read')
   getUnreadCount() {
     return this.notificationService.getUnreadCount();
   }

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Driver } from '../../drivers/entities/driver.entity';
 import { Finance } from './finance.entity';
+import { MethodPayment } from '../../method-payment/entities/method-payment.entity';
 
 @Entity('finance_payments')
 export class FinancePayment {
@@ -50,11 +51,31 @@ export class FinancePayment {
   @Column({ type: 'varchar', length: 255, nullable: true })
   reference_number!: string;
 
+  /** Rekening tujuan yang dipilih driver (relasi ke method_payments). */
+  @Column({ type: 'uuid', nullable: true })
+  method_payment_id!: string | null;
+
+  @ManyToOne(() => MethodPayment, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'method_payment_id' })
+  method_payment!: MethodPayment | null;
+
+  /** Rekening asal milik driver yang dipakai bayar (teks bebas). */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  source_account!: string | null;
+
+  /** Path file bukti bayar yang diunggah driver. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  proof_image!: string | null;
+
   @Column({ type: 'text', nullable: true })
   notes!: string;
 
   @Column({ type: 'varchar', length: 50, default: 'pending' })
   status!: string;
+
+  /** Alasan penolakan pembayaran oleh admin (status `cancelled`). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  rejection_reason!: string | null;
 
   @CreateDateColumn()
   created_at!: Date;

@@ -24,6 +24,11 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 import { AuditService } from '../audit/audit.service';
 import { extractRequestMeta } from '../audit/audit.utils';
 
+interface AuthenticatedRequest {
+  user?: { id?: string; username?: string };
+  params: Record<string, string>;
+}
+
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('users')
 export class UsersController {
@@ -73,7 +78,10 @@ export class UsersController {
 
   @Post('create')
   @Permissions('user.create')
-  async create(@Body() addUserDto: AddUserDto, @Req() req: any) {
+  async create(
+    @Body() addUserDto: AddUserDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const meta = extractRequestMeta(req);
     const result = await this.usersService.create(addUserDto);
     const user = result?.data || result;
@@ -91,9 +99,31 @@ export class UsersController {
     return result;
   }
 
+  @Post('reset-mfa/:id')
+  @Permissions('user.update')
+  async resetMfa(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const meta = extractRequestMeta(req);
+    const result = await this.usersService.resetMfa(id);
+    this.auditService
+      .create({
+        user_id: req.user?.id,
+        username: req.user?.username || 'system',
+        action: 'RESET_USER_MFA',
+        target: `user/${id}`,
+        details: `Reset MFA for user ${id}`,
+        ...meta,
+        status: 'success',
+      })
+      .catch(() => {});
+    return result;
+  }
+
   @Put('update/:id')
   @Permissions('user.update')
-  async update(@Body() updateUserDto: Partial<AddUserDto>, @Req() req: any) {
+  async update(
+    @Body() updateUserDto: Partial<AddUserDto>,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const userId = req.params.id;
     const meta = extractRequestMeta(req);
     const result = await this.usersService.update(userId, updateUserDto);
@@ -113,7 +143,7 @@ export class UsersController {
 
   @Delete('delete/:employid')
   @Permissions('user.delete')
-  async delete(@Req() req: any) {
+  async delete(@Req() req: AuthenticatedRequest) {
     const userId = req.params.employid;
     const meta = extractRequestMeta(req);
     const result = await this.usersService.delete(userId);

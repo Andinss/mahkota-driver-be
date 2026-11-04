@@ -19,6 +19,7 @@ import { DriverService } from './driver.service';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { DriverQueryDto } from './dto/driver-query.dto';
 import { DriverExportDto } from './dto/driver-export.dto';
+import { AssignSupervisorDto } from './dto/assign-supervisor.dto';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
@@ -56,6 +57,20 @@ export class DriverController {
     return this.driverService.getSummary();
   }
 
+  /** Kandidat supervisor untuk penunjukan driver (Administrator & Owner). */
+  @Get('supervisors')
+  @Permissions('driver.assign_supervisor')
+  getSupervisorOptions() {
+    return this.driverService.getSupervisorOptions();
+  }
+
+  /** Tunjuk / ganti / lepas supervisor driver (Administrator & Owner). */
+  @Put('assign-supervisor/:id')
+  @Permissions('driver.assign_supervisor')
+  assignSupervisor(@Param('id') id: string, @Body() dto: AssignSupervisorDto) {
+    return this.driverService.assignSupervisor(id, dto.supervisor_id);
+  }
+
   @Get('export')
   @Permissions('driver.read.all')
   async export(@Query() query: DriverExportDto) {
@@ -67,6 +82,12 @@ export class DriverController {
       type: result.contentType,
       disposition: `attachment; filename="${result.filename}"`,
     });
+  }
+
+  @Get(':id/stats')
+  @Permissions('driver.read.all')
+  getStats(@Param('id') id: string) {
+    return this.driverService.getDriverStats(id);
   }
 
   @Get('detail/:id')

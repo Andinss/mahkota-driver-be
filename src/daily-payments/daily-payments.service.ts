@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, QueryRunner } from 'typeorm';
+import { Repository, DataSource, QueryRunner, In } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { DailyPayment } from './entities/daily-payment.entity';
 import { Rental } from '../rentals/entities/rental.entity';
@@ -15,6 +15,12 @@ import { VendorVehicle } from '../vendor-vehicle/entities/vendor-vehicle.entity'
 import { DriverKoin } from '../koin/entities/driver-koin.entity';
 import { KoinTransaction } from '../koin/entities/koin-transaction.entity';
 import { PayDailyPaymentDto } from './dto/pay-daily-payment.dto';
+import { DailyPaymentExportDto } from './dto/daily-payment-export.dto';
+import * as ExcelJS from 'exceljs';
+import { createObjectCsvStringifier } from 'csv-writer';
+import { MethodPayment } from '../method-payment/entities/method-payment.entity';
+import { LatePayment } from '../late-payments/entities/late-payment.entity';
+import { removeStoredFile, toStoredPath } from '../common/proof-upload.util';
 
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear();
@@ -41,6 +47,8 @@ export class DailyPaymentsService {
     private readonly vehiclesRepository: Repository<Vehicle>,
     @InjectRepository(VendorVehicle)
     private readonly vendorRepository: Repository<VendorVehicle>,
+    @InjectRepository(LatePayment)
+    private readonly latePaymentRepository: Repository<LatePayment>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -93,20 +101,7 @@ export class DailyPaymentsService {
         const rentalNumber =
           rental.rental_number || `RENT-${rental.id.slice(0, 8)}`;
 
-        const now = new Date();
-        const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const lastPayment = await this.dailyPaymentsRepository
-          .createQueryBuilder('dp')
-          .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ym}/%` })
-          .orderBy('dp.reference_number', 'DESC')
-          .getOne();
-        let seq = 1;
-        if (lastPayment) {
-          const parts = lastPayment.reference_number.split('/');
-          const lastNum = parseInt(parts[parts.length - 1], 10);
-          if (!isNaN(lastNum)) seq = lastNum + 1;
-        }
-        const refNumber = `PAY-${ym}/${String(seq).padStart(4, '0')}`;
+        const refNumber = await this.nextReferenceNumber();
 
         const dailyPayment = this.dailyPaymentsRepository.create({
           rental_id: rental.id,
@@ -131,6 +126,153 @@ export class DailyPaymentsService {
     }
   }
 
+  /** Nomor referensi berikutnya dengan format PAY-YYYY/MM/NNNN. */
+  private async nextReferenceNumber(): Promise<string> {
+    const now = new Date();
+    const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastPayment = await this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .where('dp.reference_number LIKE :prefix', { prefix: `PAY-${ym}/%` })
+      .orderBy('dp.reference_number', 'DESC')
+      .getOne();
+
+    let seq = 1;
+    if (lastPayment?.reference_number) {
+      const parts = lastPayment.reference_number.split('/');
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) seq = lastNum + 1;
+    }
+    return `PAY-${ym}/${String(seq).padStart(4, '0')}`;
+  }
+
+  /**
+   * Menambahkan biaya tambahan (mis. izin keluar kota) ke daily payment
+   * pada tanggal tertentu.
+   *
+   * - Bila baris daily payment tanggal tsb belum ada (approve dilakukan
+   *   sebelum cron harian berjalan), dibuat baris baru dengan
+   *   `amount = daily_rate + fee` agar tarif harian tidak hilang.
+   * - Bila baris sudah ada dan belum lunas, `amount` ditambah `fee`.
+   * - Bila baris sudah LUNAS, dibuat baris terpisah sebesar `fee` supaya
+   *   driver tetap membayar biaya tambahannya.
+   *
+   * @returns Baris daily payment yang menampung biaya (null bila dilewati).
+   */
+  async addOutOfTownFee(params: {
+    rentalId: string;
+    driverId: string;
+    vehicleId: string;
+    paymentDate: string;
+    fee: number;
+    note: string;
+  }): Promise<DailyPayment | null> {
+    const { rentalId, driverId, vehicleId, paymentDate, fee, note } = params;
+    if (!fee || fee <= 0) return null;
+
+    const existing = await this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .where('dp.rental_id = :rentalId', { rentalId })
+      .andWhere('dp.payment_date = :paymentDate', { paymentDate })
+      .orderBy('dp.created_at', 'ASC')
+      .getOne();
+
+    if (existing && existing.status === 'paid') {
+      // Sudah lunas: buat baris terpisah khusus biaya tambahan.
+      const separate = this.dailyPaymentsRepository.create({
+        rental_id: rentalId,
+        driver_id: driverId,
+        vehicle_id: vehicleId,
+        payment_date: paymentDate,
+        amount: fee,
+        status: 'unpaid',
+        reference_number: await this.nextReferenceNumber(),
+        notes: note,
+      });
+      const savedSeparate = await this.dailyPaymentsRepository.save(separate);
+      this.logger.log(
+        `Added separate out-of-town fee Rp ${fee} for rental ${rentalId} ${paymentDate}`,
+      );
+      return savedSeparate;
+    }
+
+    if (existing) {
+      existing.amount = Number(existing.amount) + fee;
+      existing.notes = this.appendNote(existing.notes, note);
+      const saved = await this.dailyPaymentsRepository.save(existing);
+      this.logger.log(
+        `Added out-of-town fee Rp ${fee} to daily payment ${existing.id}`,
+      );
+      return saved;
+    }
+
+    // Belum ada baris untuk tanggal tsb → buat dengan tarif harian + biaya.
+    const rental = await this.rentalsRepository.findOne({
+      where: { id: rentalId },
+    });
+    const dailyAmount = Number(rental?.daily_rate) || 0;
+    const rentalNumber =
+      rental?.rental_number || `RENT-${rentalId.slice(0, 8)}`;
+
+    const created = this.dailyPaymentsRepository.create({
+      rental_id: rentalId,
+      driver_id: driverId,
+      vehicle_id: vehicleId,
+      payment_date: paymentDate,
+      amount: dailyAmount + fee,
+      status: 'unpaid',
+      reference_number: await this.nextReferenceNumber(),
+      notes: this.appendNote(`Daily payment for rental ${rentalNumber}`, note),
+    });
+    const savedCreated = await this.dailyPaymentsRepository.save(created);
+    this.logger.log(
+      `Created daily payment with out-of-town fee Rp ${fee} for rental ${rentalId} ${paymentDate}`,
+    );
+    return savedCreated;
+  }
+
+  /**
+   * Mengurangi kembali biaya tambahan dari daily payment (dipakai saat
+   * pengajuan yang sudah disetujui dibatalkan/dihapus). Bila `amount`
+   * menjadi 0 dan baris masih `unpaid`, baris tersebut dihapus.
+   */
+  async removeOutOfTownFee(
+    dailyPaymentId: string,
+    fee: number,
+    note?: string,
+  ): Promise<void> {
+    const payment = await this.dailyPaymentsRepository.findOne({
+      where: { id: dailyPaymentId },
+    });
+    if (!payment || !fee || fee <= 0) return;
+
+    const remaining = Number(payment.amount) - fee;
+
+    if (remaining <= 0 && payment.status === 'unpaid') {
+      await this.dailyPaymentsRepository.delete(payment.id);
+      this.logger.log(
+        `Deleted daily payment ${payment.id} after removing out-of-town fee`,
+      );
+      return;
+    }
+
+    payment.amount = Math.max(remaining, 0);
+    if (note) {
+      payment.notes =
+        (payment.notes || '').replace(note, '').trim() || payment.notes;
+    }
+    await this.dailyPaymentsRepository.save(payment);
+    this.logger.log(
+      `Removed out-of-town fee Rp ${fee} from daily payment ${payment.id}`,
+    );
+  }
+
+  /** Gabungkan catatan lama dengan catatan biaya tambahan (maks 500 char). */
+  private appendNote(base: string | null, extra: string): string {
+    const trimmedBase = (base || '').trim();
+    const combined = trimmedBase ? `${trimmedBase}; ${extra}` : extra;
+    return combined.slice(0, 500);
+  }
+
   async getDailyPayments(query?: {
     page?: number;
     limit?: number;
@@ -150,15 +292,18 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
 
     if (query?.status) {
       qb.where('dp.status = :status', { status: query.status });
     } else {
+      // 'pending' (menunggu verifikasi) & 'rejected' (ditolak, menunggu
+      // submit ulang driver) tetap muncul walau tanggal lampau.
       qb.where(
-        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status = :unpaid))',
-        { today: todayStr, unpaid: 'unpaid' },
+        '(dp.payment_date = :today OR (dp.payment_date < :today AND dp.status IN (:...pastStatuses)))',
+        { today: todayStr, pastStatuses: ['unpaid', 'pending', 'rejected'] },
       );
     }
 
@@ -186,6 +331,25 @@ export class DailyPaymentsService {
       payment_date: dp.payment_date,
       amount: Number(dp.amount),
       status: dp.status,
+      payment_method: dp.payment_method,
+      method_payment_id: dp.method_payment_id,
+      method_payment: dp.method_payment
+        ? {
+            id: dp.method_payment.id,
+            code: dp.method_payment.code,
+            name: dp.method_payment.name,
+            provider: dp.method_payment.provider,
+            method: dp.method_payment.method,
+            account_number: dp.method_payment.account_number,
+            account_holder: dp.method_payment.account_holder,
+          }
+        : null,
+      source_account: dp.source_account,
+      proof_image: dp.proof_image,
+      transaction_id: dp.transaction_id,
+      payment_notes: dp.payment_notes,
+      rejection_reason: dp.rejection_reason,
+      paid_date: dp.paid_date,
       reference_number: dp.reference_number,
       notes: dp.notes,
       created_at: dp.created_at,
@@ -234,6 +398,7 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .where('dp.driver_id = :driverId', { driverId })
       .orderBy('dp.payment_date', 'DESC')
       .addOrderBy('dp.created_at', 'DESC');
@@ -252,16 +417,74 @@ export class DailyPaymentsService {
       payment_date: dp.payment_date,
       amount: Number(dp.amount),
       status: dp.status,
+      payment_method: dp.payment_method,
+      method_payment_id: dp.method_payment_id,
+      method_payment: dp.method_payment
+        ? {
+            id: dp.method_payment.id,
+            code: dp.method_payment.code,
+            name: dp.method_payment.name,
+            provider: dp.method_payment.provider,
+            method: dp.method_payment.method,
+            account_number: dp.method_payment.account_number,
+            account_holder: dp.method_payment.account_holder,
+          }
+        : null,
+      source_account: dp.source_account,
+      proof_image: dp.proof_image,
+      transaction_id: dp.transaction_id,
+      payment_notes: dp.payment_notes,
+      rejection_reason: dp.rejection_reason,
+      paid_date: dp.paid_date,
       reference_number: dp.reference_number,
       notes: dp.notes,
       created_at: dp.created_at,
       updated_at: dp.updated_at,
     }));
 
+    const ids = items.map((i) => i.id);
+    const izins = ids.length
+      ? await this.latePaymentRepository.find({
+          where: { daily_payment_id: In(ids) },
+        })
+      : [];
+    const izinByDp = new Map<string, LatePayment>();
+    for (const izin of izins) {
+      if (!izin.daily_payment_id) continue;
+      const prev = izinByDp.get(izin.daily_payment_id);
+      if (!prev || (prev.status === 'rejected' && izin.status !== 'rejected')) {
+        izinByDp.set(izin.daily_payment_id, izin);
+      }
+    }
+
     return {
       success: true,
       message: 'Driver daily payments retrieved successfully',
-      data: items,
+      data: items.map((item) => {
+        const izin = izinByDp.get(item.id);
+        return {
+          ...item,
+          izin_id: izin?.id ?? null,
+          izin_status: izin?.status ?? null,
+          izin: izin
+            ? {
+                id: izin.id,
+                status: izin.status,
+                late_days: izin.late_days,
+                justification: izin.justification,
+                justification_reason: izin.justification_reason,
+                message: izin.message,
+                admin_note: izin.admin_note,
+                proof_image: izin.proof_image,
+                due_date: izin.due_date,
+                amount: Number(izin.amount),
+                payment_date: izin.payment_date,
+                created_at: izin.created_at,
+                updated_at: izin.updated_at,
+              }
+            : null,
+        };
+      }),
       meta: {
         total,
         page,
@@ -271,7 +494,11 @@ export class DailyPaymentsService {
     };
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, reason?: string) {
+    const allowed = ['paid', 'pending', 'unpaid', 'cancelled', 'rejected'];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException('Status pembayaran tidak valid');
+    }
     const payment = await this.dailyPaymentsRepository.findOne({
       where: { id },
     });
@@ -279,6 +506,9 @@ export class DailyPaymentsService {
       return { success: false, message: 'Daily payment not found' };
     }
     payment.status = status;
+    // Alasan penolakan hanya relevan saat `rejected`, di status lain dibersihkan.
+    payment.rejection_reason =
+      status === 'rejected' ? reason?.trim() || null : null;
     await this.dailyPaymentsRepository.save(payment);
     return {
       success: true,
@@ -293,6 +523,7 @@ export class DailyPaymentsService {
       .leftJoinAndSelect('dp.vehicle', 'vehicle')
       .leftJoinAndSelect('dp.rental', 'rental')
       .leftJoinAndSelect('vehicle.vendor', 'vendor')
+      .leftJoinAndSelect('dp.method_payment', 'method_payment')
       .where('dp.id = :id', { id })
       .getOne();
 
@@ -320,6 +551,25 @@ export class DailyPaymentsService {
         payment_date: dp.payment_date,
         amount: Number(dp.amount),
         status: dp.status,
+        payment_method: dp.payment_method,
+        method_payment_id: dp.method_payment_id,
+        method_payment: dp.method_payment
+          ? {
+              id: dp.method_payment.id,
+              code: dp.method_payment.code,
+              name: dp.method_payment.name,
+              provider: dp.method_payment.provider,
+              method: dp.method_payment.method,
+              account_number: dp.method_payment.account_number,
+              account_holder: dp.method_payment.account_holder,
+            }
+          : null,
+        source_account: dp.source_account,
+        proof_image: dp.proof_image,
+        transaction_id: dp.transaction_id,
+        payment_notes: dp.payment_notes,
+        rejection_reason: dp.rejection_reason,
+        paid_date: dp.paid_date,
         reference_number: dp.reference_number || '-',
         notes: dp.notes || '',
         created_at: dp.created_at,
@@ -332,16 +582,29 @@ export class DailyPaymentsService {
     id: string,
     dto: PayDailyPaymentDto,
     driverId: string,
+    file?: Express.Multer.File,
   ) {
+    const proofPath = file ? toStoredPath(file) : null;
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      const rows = await queryRunner.query(
-        'SELECT id, rental_id, driver_id, vehicle_id, payment_date, amount, status, reference_number, notes FROM daily_payments WHERE id = $1 FOR UPDATE',
+      const rows = (await queryRunner.query(
+        'SELECT id, rental_id, driver_id, vehicle_id, payment_date, amount, status, reference_number, notes, proof_image FROM daily_payments WHERE id = $1 FOR UPDATE',
         [id],
-      );
+      )) as Array<{
+        id: string;
+        rental_id: string;
+        driver_id: string;
+        vehicle_id: string;
+        payment_date: Date;
+        amount: number;
+        status: string;
+        reference_number: string | null;
+        notes: string | null;
+        proof_image: string | null;
+      }>;
       if (!rows || rows.length === 0) {
         throw new NotFoundException('Tagihan harian tidak ditemukan');
       }
@@ -352,9 +615,51 @@ export class DailyPaymentsService {
       if (row.status === 'paid') {
         throw new BadRequestException('Tagihan harian sudah lunas');
       }
+      if (row.status === 'pending') {
+        throw new BadRequestException(
+          'Pembayaran sudah dikonfirmasi dan sedang menunggu verifikasi admin',
+        );
+      }
       if (row.status === 'cancelled') {
         throw new BadRequestException('Tagihan harian sudah dibatalkan');
       }
+
+      // --- Rekening tujuan & bukti bayar ---
+      let methodPayment: MethodPayment | null = null;
+      if (dto.method_payment_id) {
+        methodPayment = await queryRunner.manager.findOne(MethodPayment, {
+          where: { id: dto.method_payment_id },
+        });
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan tidak ditemukan');
+        }
+        if (!methodPayment.is_active) {
+          throw new BadRequestException('Rekening tujuan sudah tidak aktif');
+        }
+      }
+
+      const paymentMethod = methodPayment
+        ? methodPayment.method === 'e_wallet' || methodPayment.method === 'qris'
+          ? 'e-wallet'
+          : 'transfer'
+        : dto.payment_method;
+      const isTransferLike =
+        paymentMethod === 'transfer' || paymentMethod === 'e-wallet';
+
+      if (isTransferLike) {
+        if (!methodPayment) {
+          throw new BadRequestException('Rekening tujuan wajib dipilih');
+        }
+        if (!dto.transaction_id?.trim()) {
+          throw new BadRequestException('ID transaksi wajib diisi');
+        }
+        if (!proofPath) {
+          throw new BadRequestException('Bukti pembayaran wajib diunggah');
+        }
+      }
+
+      // Transfer/e-wallet -> menunggu verifikasi admin; koin/tunai -> lunas.
+      const nextStatus = isTransferLike ? 'pending' : 'paid';
 
       const total = Number(row.amount);
       const amount = Number(dto.amount);
@@ -367,7 +672,7 @@ export class DailyPaymentsService {
         );
       }
 
-      if (dto.payment_method === 'saldo') {
+      if (paymentMethod === 'saldo') {
         const koin = await this.findKoinForUpdate(queryRunner, driverId);
         const balanceBefore = koin ? Number(koin.balance) : 0;
         const balanceAfter = balanceBefore - amount;
@@ -389,40 +694,59 @@ export class DailyPaymentsService {
           balance_after: balanceAfter,
           reference_id: id,
           reference_number:
-            dto.reference_number || row.reference_number || `PAY-${Date.now()}`,
+            dto.transaction_id?.trim() ||
+            row.reference_number ||
+            `PAY-${Date.now()}`,
           notes:
-            dto.notes ||
+            dto.payment_notes ||
             `Koin berkurang untuk tagihan harian ${row.reference_number || id}`,
         });
         await queryRunner.manager.save(tx);
       }
 
       await queryRunner.manager.update(DailyPayment, id, {
-        status: 'paid',
-        reference_number: dto.reference_number || row.reference_number,
-        notes: dto.notes
-          ? `${row.notes || ''}${row.notes ? '\n' : ''}${dto.notes}`.trim()
-          : row.notes,
+        status: nextStatus,
+        payment_method: paymentMethod,
+        method_payment_id: methodPayment?.id ?? null,
+        source_account: dto.source_account?.trim() || null,
+        proof_image: proofPath,
+        paid_date: new Date(dto.payment_date),
+        // Submit ulang (mis. setelah ditolak) menimpa data driver lama;
+        // alasan penolakan dihapus karena sudah diajukan ulang.
+        rejection_reason: null,
+        // Nomor tagihan (`reference_number`) & catatan tagihan (`notes`)
+        // tidak ditimpa — data driver disimpan di kolom terpisah.
+        transaction_id: dto.transaction_id?.trim() || null,
+        payment_notes: dto.payment_notes?.trim() || null,
       });
 
       await queryRunner.commitTransaction();
 
+      // Bukti lama diganti bukti baru — file sebelumnya dihapus dari disk
+      // (dilakukan setelah commit supaya kalau gagal, file lama tetap ada).
+      if (row.proof_image && row.proof_image !== proofPath) {
+        removeStoredFile(row.proof_image);
+      }
+
       return {
         success: true,
         message:
-          dto.payment_method === 'saldo'
-            ? 'Tagihan harian berhasil dibayar menggunakan Koin'
-            : 'Pembayaran tagihan harian berhasil dicatat',
+          nextStatus === 'pending'
+            ? 'Konfirmasi pembayaran terkirim dan menunggu verifikasi admin'
+            : paymentMethod === 'saldo'
+              ? 'Tagihan harian berhasil dibayar menggunakan Koin'
+              : 'Pembayaran tagihan harian berhasil dicatat',
         data: {
           id,
           amount,
-          payment_method: dto.payment_method,
-          status: 'paid',
+          payment_method: paymentMethod,
+          status: nextStatus,
         },
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
       console.error('Failed to pay daily payment:', error);
+      removeStoredFile(proofPath);
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
@@ -435,5 +759,292 @@ export class DailyPaymentsService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Export daily payments.
+   *
+   * - `driverId != null` → mode driver (hanya data milik driver tsb).
+   * - `driverId == null`  → mode admin (semua data, + kolom `driverName`).
+   */
+  async exportDailyPayments(
+    driverId: string | null,
+    query: DailyPaymentExportDto,
+  ) {
+    const format = query.format || 'csv';
+    const defaultColumns =
+      driverId === null
+        ? [
+            'referenceNumber',
+            'driverName',
+            'vehicle',
+            'licensePlate',
+            'vendor',
+            'amount',
+            'status',
+            'billDate',
+            'paidAt',
+          ]
+        : [
+            'referenceNumber',
+            'vehicle',
+            'licensePlate',
+            'vendor',
+            'amount',
+            'status',
+            'billDate',
+            'paidAt',
+          ];
+
+    const selectedColumns = query.columns
+      ? Array.from(new Set(query.columns.split(',').map((c) => c.trim())))
+      : defaultColumns;
+
+    const qb = this.dailyPaymentsRepository
+      .createQueryBuilder('dp')
+      .leftJoinAndSelect('dp.driver', 'driver')
+      .leftJoinAndSelect('dp.vehicle', 'vehicle')
+      .leftJoinAndSelect('dp.rental', 'rental')
+      .leftJoinAndSelect('vehicle.vendor', 'vendor');
+
+    // Mode driver → filter keras by driver_id.
+    if (driverId !== null) {
+      qb.where('dp.driver_id = :driverId', { driverId });
+    }
+
+    // Filter tanggal.
+    if (query.start_date) {
+      qb.andWhere('dp.payment_date >= :start', { start: query.start_date });
+    }
+    if (query.end_date) {
+      qb.andWhere('dp.payment_date <= :end', { end: query.end_date });
+    }
+
+    const payments = await qb
+      .orderBy('dp.payment_date', 'DESC')
+      .addOrderBy('dp.created_at', 'DESC')
+      .getMany();
+
+    const statusLabels: Record<string, string> = {
+      unpaid: 'Belum Dibayar',
+      pending: 'Menunggu Verifikasi',
+      paid: 'Lunas',
+      rejected: 'Ditolak',
+      cancelled: 'Dibatalkan',
+    };
+
+    // Base map (dipakai kedua mode).
+    const baseColumnMap: Record<string, (dp: DailyPayment) => string> = {
+      referenceNumber: (dp) => dp.reference_number || '-',
+      rentalNumber: (dp) => dp.rental?.rental_number || '-',
+      vehicle: (dp) =>
+        dp.vehicle ? `${dp.vehicle.merk} ${dp.vehicle.model}` : '-',
+      licensePlate: (dp) => dp.vehicle?.license_plate || '-',
+      vendor: (dp) => dp.vehicle?.vendor?.name || '-',
+      amount: (dp) => `Rp ${Number(dp.amount || 0).toLocaleString('id-ID')}`,
+      status: (dp) => statusLabels[dp.status] || dp.status || '-',
+      billDate: (dp) => this.formatExportDate(dp.payment_date),
+      createdAt: (dp) => this.formatExportDateTime(dp.created_at),
+      paidAt: (dp) =>
+        dp.status === 'paid' ? this.formatExportDateTime(dp.updated_at) : '-',
+    };
+
+    // `driverName` hanya untuk admin — otomatis tidak ada di driver mode,
+    // sehingga kalau driver iseng kirim `columns=driverName`, akan di-filter
+    // keluar oleh `validColumns` di bawah.
+    const columnMap: Record<string, (dp: DailyPayment) => string> =
+      driverId === null
+        ? {
+            ...baseColumnMap,
+            driverName: (dp) =>
+              dp.driver
+                ? `${dp.driver.first_name} ${dp.driver.last_name}`
+                : '-',
+          }
+        : baseColumnMap;
+
+    const headerLabels: Record<string, string> = {
+      referenceNumber: 'No. Tagihan',
+      driverName: 'Nama Driver',
+      rentalNumber: 'No. Rental',
+      vehicle: 'Kendaraan',
+      licensePlate: 'Plat Nomor',
+      vendor: 'Vendor',
+      amount: 'Jumlah',
+      status: 'Status',
+      billDate: 'Tanggal Tagihan',
+      createdAt: 'Tanggal Dibuat',
+      paidAt: 'Tanggal Bayar',
+    };
+
+    const validColumns = selectedColumns.filter((c) => columnMap[c]);
+    const activeColumns = validColumns.length ? validColumns : defaultColumns;
+
+    const rows = payments.map((payment) => {
+      const row: Record<string, string> = {};
+      for (const col of activeColumns) {
+        row[col] = columnMap[col](payment) || '';
+      }
+      return row;
+    });
+
+    let period: string | undefined;
+    if (query.start_date || query.end_date) {
+      period = `${query.start_date ? this.formatExportDate(query.start_date) : '...'} - ${query.end_date ? this.formatExportDate(query.end_date) : '...'}`;
+    }
+
+    if (format === 'csv') {
+      return this.generateDailyPaymentCsv(rows, activeColumns, headerLabels);
+    } else if (format === 'xlsx') {
+      return this.generateDailyPaymentXlsx(rows, activeColumns, headerLabels);
+    } else {
+      return this.generateDailyPaymentPdf(
+        rows,
+        activeColumns,
+        headerLabels,
+        period,
+      );
+    }
+  }
+
+  exportMyDailyPayments(driverId: string, query: DailyPaymentExportDto) {
+    return this.exportDailyPayments(driverId, query);
+  }
+
+  private formatExportDate(value?: Date | string | null): string {
+    if (!value) return '-';
+    if (typeof value === 'string') {
+      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+      if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+  }
+
+  private formatExportDateTime(value?: Date | string | null): string {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  private generateDailyPaymentCsv(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const header = columns.map((col) => ({
+      id: col,
+      title: headerLabels[col] || col,
+    }));
+
+    const csvStringifier = createObjectCsvStringifier({ header });
+    const csv =
+      csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(rows);
+
+    return {
+      buffer: Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv',
+      filename: `daily_payments_export_${Date.now()}.csv`,
+    };
+  }
+
+  private async generateDailyPaymentXlsx(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+  ) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Daily Payments');
+
+    worksheet.columns = columns.map((col) => ({
+      header: headerLabels[col] || col,
+      key: col,
+      width: 25,
+    }));
+
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+
+    worksheet.getRow(1).font = { bold: true };
+
+    const writeResult = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(writeResult);
+
+    return {
+      buffer,
+      contentType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `daily_payments_export_${Date.now()}.xlsx`,
+    };
+  }
+
+  private async generateDailyPaymentPdf(
+    rows: Record<string, string>[],
+    columns: string[],
+    headerLabels: Record<string, string>,
+    period?: string,
+  ) {
+    const PdfPrinter = require('pdfmake');
+    const roboto = require('pdfmake/fonts/Roboto');
+    PdfPrinter.addFonts(roboto);
+
+    const tableBody: any[][] = [];
+
+    tableBody.push(
+      columns.map((col) => ({
+        text: headerLabels[col] || col,
+        style: 'tableHeader',
+      })),
+    );
+
+    for (const row of rows) {
+      tableBody.push(columns.map((col) => row[col] || ''));
+    }
+
+    const content: any[] = [
+      { text: 'Laporan Tagihan Harian', style: 'header' },
+    ];
+    if (period) {
+      content.push({ text: `Periode: ${period}`, style: 'subheader' });
+    }
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: columns.map(() => '*'),
+        body: tableBody,
+      },
+      layout: 'headerLineOnly',
+    });
+
+    const docDefinition: any = {
+      content,
+      styles: {
+        header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
+        subheader: { fontSize: 10, margin: [0, 0, 0, 10] },
+        tableHeader: { bold: true, fontSize: 10, fillColor: '#e2e8f0' },
+      },
+      defaultStyle: { fontSize: 9 },
+      pageOrientation: 'landscape',
+    };
+
+    const pdfDoc = PdfPrinter.createPdf(docDefinition);
+    const buffer = await pdfDoc.getBuffer();
+
+    return {
+      buffer,
+      contentType: 'application/pdf',
+      filename: `daily_payments_export_${Date.now()}.pdf`,
+    };
   }
 }
